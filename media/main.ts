@@ -130,6 +130,12 @@ class IFlowApp {
   private workspaceFiles: { path: string; name: string }[] = [];
   private faviconUri: string;
 
+  private showConversationPanel = false;
+  private conversationSearch = '';
+  private showModeMenu = false;
+  private slashSelectedIndex = 0;
+  private slashMenuMode: 'commands' | 'models' | 'modes' = 'commands';
+
   constructor() {
     this.vscode = acquireVsCodeApi();
     this.faviconUri = document.getElementById('app')?.getAttribute('data-favicon-uri') || '';
@@ -209,47 +215,151 @@ class IFlowApp {
     `;
 
     this.attachEventListeners();
+    // Only scroll if we are not manually scrolled up? For now always scroll to bottom on render
     this.scrollToBottom();
   }
 
+  // Top Bar - conversation selector (left) + new chat button (right)
   private renderTopBar(): string {
-    const conversation = this.getCurrentConversation();
     const conversations = this.state?.conversations || [];
+    const current = this.getCurrentConversation();
+    const title = current ? this.escapeHtml(current.title) : 'No conversations';
 
     return `
       <div class="top-bar">
         <div class="conversation-selector">
-          <select id="conversation-select" class="dropdown">
-            ${conversations.map(c => `
-              <option value="${c.id}" ${c.id === this.state?.currentConversationId ? 'selected' : ''}>
-                ${this.escapeHtml(c.title)}
-              </option>
-            `).join('')}
-            ${conversations.length === 0 ? '<option value="">No conversations</option>' : ''}
-          </select>
-          <button id="new-conversation-btn" class="icon-btn" title="New Conversation">
-            <span class="icon">+</span>
+          <button id="conversation-trigger" class="conversation-trigger" title="Switch conversation">
+            <span>${title}</span>
+            <span class="chevron">▼</span>
           </button>
+          ${this.renderConversationPanel(conversations)}
         </div>
         <div class="toolbar">
-          <select id="mode-select" class="dropdown small">
-            <option value="default" ${conversation?.mode === 'default' ? 'selected' : ''}>Default</option>
-            <option value="yolo" ${conversation?.mode === 'yolo' ? 'selected' : ''}>YOLO</option>
-            <option value="plan" ${conversation?.mode === 'plan' ? 'selected' : ''}>Plan</option>
-            <option value="autoEdit" ${conversation?.mode === 'autoEdit' ? 'selected' : ''}>Smart</option>
-          </select>
-          <label class="toggle-label">
-            <input type="checkbox" id="think-toggle" ${conversation?.think ? 'checked' : ''}>
-            <span>Think</span>
-          </label>
-          <select id="model-select" class="dropdown">
-            ${MODELS.map(m => `
-              <option value="${m}" ${conversation?.model === m ? 'selected' : ''}>${m}</option>
-            `).join('')}
-          </select>
+           <button id="new-conversation-top-btn" class="icon-btn" title="New Chat">
+             <span class="icon">+</span>
+           </button>
         </div>
       </div>
     `;
+  }
+
+  private renderConversationPanel(conversations: Conversation[]): string {
+    const filtered = conversations.filter(c =>
+      this.conversationSearch === '' ||
+      c.title.toLowerCase().includes(this.conversationSearch.toLowerCase())
+    );
+
+    // Group by date
+    const now = Date.now();
+    const todayStart = new Date().setHours(0, 0, 0, 0);
+    const yesterdayStart = todayStart - 86400000;
+
+    const groups: { label: string; items: Conversation[] }[] = [];
+    const today: Conversation[] = [];
+    const yesterday: Conversation[] = [];
+    const earlier: Conversation[] = [];
+
+    for (const c of filtered) {
+      if (c.updatedAt >= todayStart) {
+        today.push(c);
+      } else if (c.updatedAt >= yesterdayStart) {
+        yesterday.push(c);
+      } else {
+        earlier.push(c);
+      }
+    }
+
+    if (today.length > 0) groups.push({ label: 'Today', items: today });
+    if (yesterday.length > 0) groups.push({ label: 'Yesterday', items: yesterday });
+    if (earlier.length > 0) groups.push({ label: 'Earlier', items: earlier });
+
+    return `
+      <div class="conversation-panel ${this.showConversationPanel ? '' : 'hidden'}" id="conversation-panel">
+        <div class="conversation-panel-search">
+          <input type="text" id="conversation-search" placeholder="Search sessions..." value="${this.escapeAttr(this.conversationSearch)}" />
+        </div>
+        <div class="conversation-panel-list">
+          ${groups.length === 0 ? '<div class="conversation-panel-empty">No conversations found</div>' : ''}
+          ${groups.map(g => `
+            <div class="conversation-group-label">${g.label}</div>
+            ${g.items.map(c => `
+              <div class="conversation-item ${c.id === this.state?.currentConversationId ? 'active' : ''}" data-id="${c.id}">
+                <div class="conversation-item-info">
+                  <div class="conversation-item-title">${this.escapeHtml(c.title)}</div>
+                  <div class="conversation-item-meta">
+                    <span>${c.messages.length} messages</span>
+                  </div>
+                </div>
+                <span class="conversation-item-time">${this.timeAgo(c.updatedAt, now)}</span>
+                <button class="conversation-item-delete" data-delete-id="${c.id}" title="Delete">&times;</button>
+              </div>
+            `).join('')}
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  private timeAgo(timestamp: number, now: number): string {
+    const diff = now - timestamp;
+    const minutes = Math.floor(diff / 60000);
+    if (minutes < 1) return 'now';
+    if (minutes < 60) return `${minutes}m`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h`;
+    const days = Math.floor(hours / 24);
+    return `${days}d`;
+  }
+
+  private getModeLabel(mode: ConversationMode): string {
+    switch (mode) {
+      case 'default': return 'Chat';
+      case 'yolo': return 'YOLO';
+      case 'plan': return 'Plan';
+      case 'autoEdit': return 'Smart';
+      default: return 'Chat';
+    }
+  }
+
+  private renderModePopup(mode: ConversationMode, isThinking: boolean): string {
+    return `
+      <div class="mode-popup ${this.showModeMenu ? '' : 'hidden'}" id="mode-popup">
+        <div class="mode-option ${mode === 'default' ? 'active' : ''}" data-mode="default">
+          <span class="mode-option-label">Chat</span>
+          <span class="mode-option-desc">Normal conversation</span>
+        </div>
+        <div class="mode-option ${mode === 'yolo' ? 'active' : ''}" data-mode="yolo">
+          <span class="mode-option-label">YOLO</span>
+          <span class="mode-option-desc">Auto-approve actions</span>
+        </div>
+        <div class="mode-option ${mode === 'plan' ? 'active' : ''}" data-mode="plan">
+          <span class="mode-option-label">Plan</span>
+          <span class="mode-option-desc">Plan before executing</span>
+        </div>
+        <div class="mode-option ${mode === 'autoEdit' ? 'active' : ''}" data-mode="autoEdit">
+          <span class="mode-option-label">Smart</span>
+          <span class="mode-option-desc">AI-driven edits</span>
+        </div>
+        <div class="mode-popup-divider"></div>
+        <div class="mode-option think-option" id="think-option">
+          <span class="mode-option-label">🧠 Thinking</span>
+          <div class="toggle-switch ${isThinking ? 'active' : ''}">
+            <div class="toggle-knob"></div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  private autoSizeSelect(select: HTMLSelectElement): void {
+    const option = select.options[select.selectedIndex];
+    if (!option) return;
+    const span = document.createElement('span');
+    span.style.cssText = 'position:absolute;visibility:hidden;font-size:inherit;font-family:inherit;white-space:nowrap;';
+    select.parentElement?.appendChild(span);
+    span.textContent = option.text;
+    select.style.width = (span.offsetWidth + 24) + 'px';
+    span.remove();
   }
 
   private renderMessages(): string {
@@ -407,6 +517,10 @@ class IFlowApp {
   }
 
   private renderComposer(): string {
+    const conversation = this.getCurrentConversation();
+    const isThinking = conversation?.think ?? false;
+    const currentModel = conversation?.model ?? 'GLM-4.7';
+
     return `
       <div class="composer">
         ${this.renderAttachedFilesHtml()}
@@ -414,17 +528,17 @@ class IFlowApp {
           <button id="attach-btn" class="icon-btn" title="Attach files">
             <span class="icon">📎</span>
           </button>
-          <div class="input-wrapper">
+          <div class="input-wrapper" style="flex:1;position:relative;">
             <textarea
               id="message-input"
-              placeholder="Type a message... (/ for commands, @ for files)"
+              placeholder="Message iFlow..."
               rows="1"
             ></textarea>
             ${this.showSlashMenu ? this.renderSlashMenu() : ''}
             ${this.showMentionMenu ? this.renderMentionMenuHtml() : ''}
           </div>
           ${this.state?.isStreaming ? `
-            <button id="cancel-btn" class="icon-btn danger" title="Cancel">
+            <button id="cancel-btn" class="icon-btn danger" title="Stop">
               <span class="icon">⏹</span>
             </button>
           ` : `
@@ -432,6 +546,25 @@ class IFlowApp {
               <span class="icon">➤</span>
             </button>
           `}
+        </div>
+        <div class="composer-status-bar">
+          <div class="status-left">
+             <div class="status-item mode-selector-wrapper">
+                <button id="mode-trigger" class="mode-trigger">
+                  <span>${this.getModeLabel(conversation?.mode || 'default')}</span>
+                  <span class="chevron">∨</span>
+                </button>
+                ${this.renderModePopup(conversation?.mode || 'default', isThinking)}
+             </div>
+             ${isThinking ? '<span class="thinking-chip">🧠 Thinking</span>' : ''}
+             <div class="status-item">
+               <select id="model-select" class="dropdown-mini" title="Select Model">
+                 ${MODELS.map(m => `
+                   <option value="${m}" ${currentModel === m ? 'selected' : ''}>${m}</option>
+                 `).join('')}
+               </select>
+             </div>
+          </div>
         </div>
       </div>
     `;
@@ -513,36 +646,111 @@ class IFlowApp {
   }
 
   private attachEventListeners(): void {
-    // Conversation selector
-    const conversationSelect = document.getElementById('conversation-select') as HTMLSelectElement;
-    conversationSelect?.addEventListener('change', () => {
-      if (conversationSelect.value) {
-        this.vscode.postMessage({ type: 'switchConversation', conversationId: conversationSelect.value });
+    // Conversation panel trigger
+    document.getElementById('conversation-trigger')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.showConversationPanel = !this.showConversationPanel;
+      const panel = document.getElementById('conversation-panel');
+      if (panel) {
+        panel.classList.toggle('hidden', !this.showConversationPanel);
+        if (this.showConversationPanel) {
+          const searchInput = document.getElementById('conversation-search') as HTMLInputElement;
+          searchInput?.focus();
+        }
       }
     });
 
-    // New conversation button
-    document.getElementById('new-conversation-btn')?.addEventListener('click', () => {
+    // Conversation panel search
+    const searchInput = document.getElementById('conversation-search') as HTMLInputElement;
+    searchInput?.addEventListener('input', () => {
+      this.conversationSearch = searchInput.value;
+      // Re-render just the panel list
+      const panel = document.getElementById('conversation-panel');
+      if (panel) {
+        const conversations = this.state?.conversations || [];
+        panel.outerHTML = this.renderConversationPanel(conversations);
+        const newPanel = document.getElementById('conversation-panel');
+        if (newPanel) {
+          newPanel.classList.remove('hidden');
+          this.showConversationPanel = true;
+          this.attachConversationPanelListeners();
+          // Re-focus search input and restore cursor
+          const newSearch = document.getElementById('conversation-search') as HTMLInputElement;
+          if (newSearch) {
+            newSearch.focus();
+            newSearch.selectionStart = newSearch.selectionEnd = newSearch.value.length;
+          }
+        }
+      }
+    });
+
+    // Conversation panel item clicks
+    this.attachConversationPanelListeners();
+
+    // Close panel when clicking outside
+    document.addEventListener('click', (e) => {
+      if (this.showConversationPanel) {
+        const panel = document.getElementById('conversation-panel');
+        const trigger = document.getElementById('conversation-trigger');
+        if (panel && trigger && !panel.contains(e.target as Node) && !trigger.contains(e.target as Node)) {
+          this.showConversationPanel = false;
+          panel.classList.add('hidden');
+        }
+      }
+    });
+
+    // New conversation button (top bar)
+    document.getElementById('new-conversation-top-btn')?.addEventListener('click', () => {
       this.vscode.postMessage({ type: 'newConversation' });
     });
 
-    // Mode selector
-    const modeSelect = document.getElementById('mode-select') as HTMLSelectElement;
-    modeSelect?.addEventListener('change', () => {
-      this.vscode.postMessage({ type: 'setMode', mode: modeSelect.value as ConversationMode });
+    // Mode trigger button
+    document.getElementById('mode-trigger')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.showModeMenu = !this.showModeMenu;
+      const popup = document.getElementById('mode-popup');
+      if (popup) {
+        popup.classList.toggle('hidden', !this.showModeMenu);
+      }
     });
 
-    // Think toggle
-    const thinkToggle = document.getElementById('think-toggle') as HTMLInputElement;
-    thinkToggle?.addEventListener('change', () => {
-      this.vscode.postMessage({ type: 'setThink', enabled: thinkToggle.checked });
+    // Mode options in popup
+    document.querySelectorAll('.mode-option[data-mode]').forEach(item => {
+      item.addEventListener('click', () => {
+        const mode = (item as HTMLElement).dataset.mode as ConversationMode;
+        this.showModeMenu = false;
+        this.vscode.postMessage({ type: 'setMode', mode });
+      });
     });
 
-    // Model selector
+    // Think toggle in mode popup
+    document.getElementById('think-option')?.addEventListener('click', () => {
+      const conv = this.getCurrentConversation();
+      const newThink = !(conv?.think ?? false);
+      this.vscode.postMessage({ type: 'setThink', enabled: newThink });
+    });
+
+    // Close mode popup on outside click
+    document.addEventListener('click', (e) => {
+      if (this.showModeMenu) {
+        const popup = document.getElementById('mode-popup');
+        const trigger = document.getElementById('mode-trigger');
+        if (popup && trigger && !popup.contains(e.target as Node) && !trigger.contains(e.target as Node)) {
+          this.showModeMenu = false;
+          popup.classList.add('hidden');
+        }
+      }
+    });
+
+    // Model selector (auto-sized)
     const modelSelect = document.getElementById('model-select') as HTMLSelectElement;
-    modelSelect?.addEventListener('change', () => {
-      this.vscode.postMessage({ type: 'setModel', model: modelSelect.value as ModelType });
-    });
+    if (modelSelect) {
+      this.autoSizeSelect(modelSelect);
+      modelSelect.addEventListener('change', () => {
+        this.vscode.postMessage({ type: 'setModel', model: modelSelect.value as ModelType });
+        this.autoSizeSelect(modelSelect);
+      });
+    }
 
     // Attach button
     document.getElementById('attach-btn')?.addEventListener('click', () => {
@@ -567,6 +775,18 @@ class IFlowApp {
     });
 
     input?.addEventListener('keydown', (e) => {
+      // Arrow key navigation for slash menu
+      if (this.showSlashMenu && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        e.preventDefault();
+        const items = this.getSlashMenuItems();
+        if (e.key === 'ArrowUp') {
+          this.slashSelectedIndex = (this.slashSelectedIndex - 1 + items.length) % items.length;
+        } else {
+          this.slashSelectedIndex = (this.slashSelectedIndex + 1) % items.length;
+        }
+        this.updateSlashMenu();
+        return;
+      }
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         if (this.showSlashMenu) {
@@ -577,9 +797,17 @@ class IFlowApp {
           this.sendMessage();
         }
       } else if (e.key === 'Escape') {
-        this.showSlashMenu = false;
-        this.showMentionMenu = false;
-        this.render();
+        if (this.showSlashMenu && this.slashMenuMode !== 'commands') {
+          // Go back to commands list
+          this.slashMenuMode = 'commands';
+          this.slashSelectedIndex = 0;
+          this.updateSlashMenu();
+        } else {
+          this.showSlashMenu = false;
+          this.showMentionMenu = false;
+          this.updateSlashMenu();
+          this.render();
+        }
       }
     });
 
@@ -612,10 +840,17 @@ class IFlowApp {
   private attachSlashListeners(): void {
     document.querySelectorAll('.slash-item').forEach(item => {
       item.addEventListener('click', () => {
-        const command = (item as HTMLElement).dataset.command;
-        if (command) {
-          this.executeCommand(command);
-        }
+        const index = parseInt((item as HTMLElement).dataset.index || '0', 10);
+        this.slashSelectedIndex = index;
+        this.executeSlashCommand();
+      });
+      item.addEventListener('mouseenter', () => {
+        const index = parseInt((item as HTMLElement).dataset.index || '0', 10);
+        this.slashSelectedIndex = index;
+        // Update highlight without rebuilding
+        document.querySelectorAll('.slash-item').forEach((el, i) => {
+          el.classList.toggle('selected', i === index);
+        });
       });
     });
   }
@@ -641,15 +876,48 @@ class IFlowApp {
     });
   }
 
+  private attachConversationPanelListeners(): void {
+    // Click on conversation items
+    document.querySelectorAll('.conversation-item').forEach(item => {
+      item.addEventListener('click', (e) => {
+        // Don't switch if clicking the delete button
+        if ((e.target as HTMLElement).closest('.conversation-item-delete')) return;
+        const id = (item as HTMLElement).dataset.id;
+        if (id) {
+          this.showConversationPanel = false;
+          this.conversationSearch = '';
+          this.vscode.postMessage({ type: 'switchConversation', conversationId: id });
+        }
+      });
+    });
+
+    // Delete conversation buttons
+    document.querySelectorAll('.conversation-item-delete').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = (btn as HTMLElement).dataset.deleteId;
+        if (id) {
+          this.vscode.postMessage({ type: 'deleteConversation', conversationId: id });
+        }
+      });
+    });
+  }
+
   private handleInputChange(input: HTMLTextAreaElement): void {
     const value = input.value;
     const cursorPos = input.selectionStart;
 
     // Check for slash command
     if (value.startsWith('/')) {
+      if (!this.showSlashMenu) {
+        this.slashMenuMode = 'commands';
+      }
       this.showSlashMenu = true;
       this.slashFilter = value;
       this.showMentionMenu = false;
+      if (this.slashMenuMode === 'commands') {
+        this.slashSelectedIndex = 0;
+      }
       this.updateSlashMenu();
       return;
     }
@@ -667,33 +935,117 @@ class IFlowApp {
 
     this.showSlashMenu = false;
     this.showMentionMenu = false;
+    this.updateSlashMenu();
   }
 
   private updateSlashMenu(): void {
-    const menu = document.getElementById('slash-menu');
-    if (menu) {
-      menu.innerHTML = SLASH_COMMANDS
-        .filter(c => c.command.toLowerCase().includes(this.slashFilter.toLowerCase()))
-        .map(c => `
-          <div class="slash-item" data-command="${c.command}">
-            <span class="command">${c.command}</span>
-            <span class="description">${c.description}</span>
-          </div>
-        `).join('');
-      this.attachSlashListeners();
+    let menu = document.getElementById('slash-menu');
+    if (!this.showSlashMenu) {
+      menu?.remove();
+      return;
     }
+    const wrapper = document.querySelector('.input-wrapper');
+    if (!menu && wrapper) {
+      menu = document.createElement('div');
+      menu.id = 'slash-menu';
+      menu.className = 'slash-menu';
+      wrapper.appendChild(menu);
+    }
+    if (!menu) return;
+
+    const items = this.getSlashMenuItems();
+    if (this.slashSelectedIndex >= items.length) this.slashSelectedIndex = items.length - 1;
+    if (this.slashSelectedIndex < 0) this.slashSelectedIndex = 0;
+
+    menu.innerHTML = items.map((item, i) => `
+      <div class="slash-item ${i === this.slashSelectedIndex ? 'selected' : ''}" data-index="${i}">
+        <span class="command">${item.label}</span>
+        <span class="description">${item.description}</span>
+      </div>
+    `).join('');
+
+    this.attachSlashListeners();
+    const selected = menu.querySelector('.slash-item.selected');
+    selected?.scrollIntoView({ block: 'nearest' });
+  }
+
+  private getSlashMenuItems(): { label: string; description: string; value: string; action: string }[] {
+    if (this.slashMenuMode === 'models') {
+      const currentModel = this.getCurrentConversation()?.model ?? 'GLM-4.7';
+      return [
+        { label: '←', description: 'Back to commands', value: 'back', action: 'back' },
+        ...(MODELS as readonly string[]).map(m => ({
+          label: m,
+          description: m === currentModel ? '✓ Current' : '',
+          value: m,
+          action: 'selectModel'
+        }))
+      ];
+    }
+    if (this.slashMenuMode === 'modes') {
+      const currentMode = this.getCurrentConversation()?.mode ?? 'default';
+      const modes = [
+        { value: 'default', label: 'Chat', desc: 'Normal conversation' },
+        { value: 'yolo', label: 'YOLO', desc: 'Auto-approve actions' },
+        { value: 'plan', label: 'Plan', desc: 'Plan before executing' },
+        { value: 'autoEdit', label: 'Smart', desc: 'AI-driven edits' },
+      ];
+      return [
+        { label: '←', description: 'Back to commands', value: 'back', action: 'back' },
+        ...modes.map(m => ({
+          label: m.label,
+          description: (m.value === currentMode ? '✓ ' : '') + m.desc,
+          value: m.value,
+          action: 'selectMode'
+        }))
+      ];
+    }
+    // Commands mode
+    return SLASH_COMMANDS
+      .filter(c => c.command.toLowerCase().includes(this.slashFilter.toLowerCase()))
+      .map(c => ({
+        label: c.command,
+        description: c.description + (c.command === '/mode' || c.command === '/model' ? '  →' : ''),
+        value: c.command,
+        action: 'command'
+      }));
   }
 
   private executeSlashCommand(): void {
-    const firstItem = document.querySelector('.slash-item') as HTMLElement;
-    if (firstItem?.dataset.command) {
-      this.executeCommand(firstItem.dataset.command);
+    const items = this.getSlashMenuItems();
+    const selected = items[this.slashSelectedIndex];
+    if (!selected) return;
+
+    switch (selected.action) {
+      case 'back':
+        this.slashMenuMode = 'commands';
+        this.slashSelectedIndex = 0;
+        this.updateSlashMenu();
+        break;
+      case 'selectModel':
+        this.vscode.postMessage({ type: 'setModel', model: selected.value as ModelType });
+        this.closeSlashMenu();
+        break;
+      case 'selectMode':
+        this.vscode.postMessage({ type: 'setMode', mode: selected.value as ConversationMode });
+        this.closeSlashMenu();
+        break;
+      case 'command':
+        this.executeCommand(selected.value);
+        break;
     }
   }
 
-  private executeCommand(command: string): void {
+  private closeSlashMenu(): void {
+    this.showSlashMenu = false;
+    this.slashMenuMode = 'commands';
+    this.slashSelectedIndex = 0;
     const input = document.getElementById('message-input') as HTMLTextAreaElement;
+    if (input) input.value = '';
+    this.updateSlashMenu();
+  }
 
+  private executeCommand(command: string): void {
     switch (command) {
       case '/new':
         this.vscode.postMessage({ type: 'newConversation' });
@@ -702,28 +1054,26 @@ class IFlowApp {
         this.vscode.postMessage({ type: 'clearConversation' });
         break;
       case '/mode':
-        document.getElementById('mode-select')?.focus();
+        this.slashMenuMode = 'modes';
+        this.slashSelectedIndex = 0;
+        this.updateSlashMenu();
+        return;
+      case '/think': {
+        const conv = this.getCurrentConversation();
+        this.vscode.postMessage({ type: 'setThink', enabled: !(conv?.think ?? false) });
         break;
-      case '/think':
-        const toggle = document.getElementById('think-toggle') as HTMLInputElement;
-        if (toggle) {
-          toggle.checked = !toggle.checked;
-          this.vscode.postMessage({ type: 'setThink', enabled: toggle.checked });
-        }
-        break;
+      }
       case '/model':
-        document.getElementById('model-select')?.focus();
-        break;
+        this.slashMenuMode = 'models';
+        this.slashSelectedIndex = 0;
+        this.updateSlashMenu();
+        return;
       case '/help':
         // Show help in chat
         break;
     }
 
-    if (input) {
-      input.value = '';
-    }
-    this.showSlashMenu = false;
-    this.render();
+    this.closeSlashMenu();
   }
 
   private insertMention(): void {

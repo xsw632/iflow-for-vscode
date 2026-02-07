@@ -34,12 +34,80 @@ export interface RunOptions {
   model: ModelType;
 }
 
+export class ThinkingParser {
+  private buffer: string = '';
+  private inThinking: boolean = false;
+
+  parse(text: string): StreamChunk[] {
+    this.buffer += text;
+    const chunks: StreamChunk[] = [];
+
+    while (true) {
+      if (!this.inThinking) {
+        const thinkStart = this.buffer.indexOf('<think>');
+        if (thinkStart !== -1) {
+          if (thinkStart > 0) {
+            chunks.push({ chunkType: 'text', content: this.buffer.slice(0, thinkStart) });
+          }
+          chunks.push({ chunkType: 'thinking_start' });
+          this.inThinking = true;
+          this.buffer = this.buffer.slice(thinkStart + 7);
+        } else {
+          // Check for partial <think>
+          const lastLt = this.buffer.lastIndexOf('<');
+          if (lastLt !== -1 && '<think>'.startsWith(this.buffer.slice(lastLt))) {
+            if (lastLt > 0) {
+              chunks.push({ chunkType: 'text', content: this.buffer.slice(0, lastLt) });
+              this.buffer = this.buffer.slice(lastLt);
+            }
+            break;
+          } else {
+            if (this.buffer.length > 0) {
+              chunks.push({ chunkType: 'text', content: this.buffer });
+              this.buffer = '';
+            }
+            break;
+          }
+        }
+      } else {
+        const thinkEnd = this.buffer.indexOf('</think>');
+        if (thinkEnd !== -1) {
+          if (thinkEnd > 0) {
+            chunks.push({ chunkType: 'thinking_content', content: this.buffer.slice(0, thinkEnd) });
+          }
+          chunks.push({ chunkType: 'thinking_end' });
+          this.inThinking = false;
+          this.buffer = this.buffer.slice(thinkEnd + 8);
+        } else {
+          // Check for partial </think>
+          const lastLt = this.buffer.lastIndexOf('<');
+          if (lastLt !== -1 && '</think>'.startsWith(this.buffer.slice(lastLt))) {
+            if (lastLt > 0) {
+              chunks.push({ chunkType: 'thinking_content', content: this.buffer.slice(0, lastLt) });
+              this.buffer = this.buffer.slice(lastLt);
+            }
+            break;
+          } else {
+            if (this.buffer.length > 0) {
+              chunks.push({ chunkType: 'thinking_content', content: this.buffer });
+              this.buffer = '';
+            }
+            break;
+          }
+        }
+      }
+    }
+    return chunks;
+  }
+}
+
 export class IFlowClient {
   private client: SDKClientType | null = null;
   private outputChannel: vscode.OutputChannel | null = null;
   private isConnected = false;
   private isCancelled = false;
   private managedProcess: cp.ChildProcess | null = null;
+  private parser: ThinkingParser | null = null;
 
   private log(message: string): void {
     const debugLogging = vscode.workspace.getConfiguration('iflow').get<boolean>('debugLogging', false);
@@ -265,6 +333,7 @@ export class IFlowClient {
     onError: (error: string) => void
   ): Promise<void> {
     this.isCancelled = false;
+    this.parser = new ThinkingParser();
     const config = this.getConfig();
 
     // Update model in CLI settings so all internal code paths use it
@@ -400,7 +469,12 @@ export class IFlowClient {
     switch (message.type) {
       case sdk.MessageType.ASSISTANT:
         if (message.chunk?.text) {
-          chunks.push({ chunkType: 'text', content: message.chunk.text });
+          if (this.parser) {
+            const parserChunks = this.parser.parse(message.chunk.text);
+            chunks.push(...parserChunks);
+          } else {
+            chunks.push({ chunkType: 'text', content: message.chunk.text });
+          }
         }
         break;
 
