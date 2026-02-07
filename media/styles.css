@@ -144,8 +144,12 @@ body {
 }
 
 .empty-state .logo {
-  font-size: 64px;
   margin-bottom: var(--spacing-lg);
+}
+
+.empty-state .logo .logo-icon {
+  width: 64px;
+  height: 64px;
 }
 
 .empty-state h2 {
@@ -474,8 +478,12 @@ body {
 }
 
 .bounce-logo {
-  font-size: 24px;
   animation: bounce 1s infinite;
+}
+
+.bounce-logo .bounce-logo-icon {
+  width: 24px;
+  height: 24px;
 }
 
 @keyframes bounce {

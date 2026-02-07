@@ -128,9 +128,11 @@ class IFlowApp {
   private showMentionMenu = false;
   private mentionFilter = '';
   private workspaceFiles: { path: string; name: string }[] = [];
+  private faviconUri: string;
 
   constructor() {
     this.vscode = acquireVsCodeApi();
+    this.faviconUri = document.getElementById('app')?.getAttribute('data-favicon-uri') || '';
     this.setupMessageHandler();
     this.render();
     this.vscode.postMessage({ type: 'ready' });
@@ -275,7 +277,7 @@ class IFlowApp {
       return `
         <div class="messages">
           <div class="empty-state">
-            <div class="logo">🌊</div>
+            <div class="logo"><img src="${this.faviconUri}" alt="IFlow" class="logo-icon" /></div>
             <h2>Welcome to IFlow</h2>
             <p>Start a conversation by typing a message below.</p>
             <p class="hint">Use / for commands, @ to mention files</p>
@@ -398,7 +400,7 @@ class IFlowApp {
   private renderPendingIndicator(): string {
     return `
       <div class="pending-indicator">
-        <div class="bounce-logo">🌊</div>
+        <div class="bounce-logo"><img src="${this.faviconUri}" alt="IFlow" class="bounce-logo-icon" /></div>
         <span>Scheming...</span>
       </div>
     `;
