@@ -528,7 +528,7 @@ class IFlowApp {
           <button id="attach-btn" class="icon-btn" title="Attach files">
             <span class="icon">📎</span>
           </button>
-          <div class="input-wrapper" style="flex:1;position:relative;">
+	          <div class="input-wrapper">
             <textarea
               id="message-input"
               placeholder="Message iFlow..."
@@ -552,7 +552,7 @@ class IFlowApp {
              <div class="status-item mode-selector-wrapper">
                 <button id="mode-trigger" class="mode-trigger">
                   <span>${this.getModeLabel(conversation?.mode || 'default')}</span>
-                  <span class="chevron">∨</span>
+                  <span class="chevron">▾</span>
                 </button>
                 ${this.renderModePopup(conversation?.mode || 'default', isThinking)}
              </div>
@@ -1127,8 +1127,10 @@ class IFlowApp {
   }
 
   private autoResizeTextarea(textarea: HTMLTextAreaElement): void {
-    textarea.style.height = 'auto';
-    textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
+    textarea.style.height = '28px';
+    if (textarea.scrollHeight > 28) {
+      textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
+    }
   }
 
   private scrollToBottom(): void {
