@@ -248,7 +248,6 @@ body {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xl);
-  scroll-behavior: smooth;
 }
 
 /* Message Item */
@@ -533,6 +532,14 @@ body {
   align-items: center;
   justify-content: center;
   padding: 2px;
+}
+
+.file-chip.loading {
+  opacity: 0.6;
+}
+
+.file-chip .file-loading-indicator {
+  font-size: 10px;
 }
 
 .composer-input-row {

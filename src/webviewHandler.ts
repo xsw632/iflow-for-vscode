@@ -200,23 +200,30 @@ export class WebviewHandler {
   }
 
   private async handleSendMessage(content: string, attachedFiles: AttachedFile[]): Promise<void> {
+    // Immediately reflect "running" in UI so Enter has instant feedback.
+    // Expensive checks (CLI probe/connect) happen after this optimistic state update.
+    this.store.batchUpdate(() => {
+      this.store.addUserMessage(content, attachedFiles);
+      this.store.startAssistantMessage();
+      this.store.setStreaming(true);
+    });
+
     // Lazy check: verify CLI availability on first send (or after previous failure)
     if (!this.cliChecked) {
       await this.checkCliAvailability();
       this.cliChecked = true;
       if (!this.store.getState().cliAvailable) {
-        this.postMessage({ type: 'streamError', error: 'IFlow SDK is not available. Please ensure iFlow CLI is installed and accessible in your PATH.' });
+        const error = 'IFlow SDK is not available. Please ensure iFlow CLI is installed and accessible in your PATH.';
+        this.store.batchUpdate(() => {
+          this.store.appendToAssistantMessage({ chunkType: 'error', message: error });
+          this.store.endAssistantMessage();
+          this.store.setStreaming(false);
+        });
+        this.postMessage({ type: 'streamError', error });
         this.cliChecked = false; // retry on next send
         return;
       }
     }
-
-    // Add user message
-    this.store.addUserMessage(content, attachedFiles);
-
-    // Start assistant message
-    this.store.startAssistantMessage();
-    this.store.setStreaming(true);
 
     const conversation = this.store.getCurrentConversation();
     if (!conversation) return;
@@ -234,8 +241,11 @@ export class WebviewHandler {
         this.postMessage({ type: 'streamChunk', chunk });
       },
       () => {
-        this.store.endAssistantMessage();
-        this.store.setStreaming(false);
+        // Batch: end assistant + stop streaming → single stateUpdated
+        this.store.batchUpdate(() => {
+          this.store.endAssistantMessage();
+          this.store.setStreaming(false);
+        });
         this.postMessage({ type: 'streamEnd' });
       },
       (error) => {
@@ -244,8 +254,12 @@ export class WebviewHandler {
           this.store.setCliStatus(false, null, error);
           this.cliChecked = false;
         }
-        this.store.endAssistantMessage();
-        this.store.setStreaming(false);
+        // Batch: append error + end assistant + stop streaming → single stateUpdated
+        this.store.batchUpdate(() => {
+          this.store.appendToAssistantMessage({ chunkType: 'error', message: error });
+          this.store.endAssistantMessage();
+          this.store.setStreaming(false);
+        });
         this.postMessage({ type: 'streamError', error });
       }
     );

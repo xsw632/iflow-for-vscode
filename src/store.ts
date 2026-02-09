@@ -17,6 +17,7 @@ export class ConversationStore {
   private state: ConversationState;
   private memento: vscode.Memento;
   private onStateChange: (state: ConversationState) => void;
+  private suppressNotify = false;
 
   constructor(memento: vscode.Memento, onStateChange: (state: ConversationState) => void) {
     this.memento = memento;
@@ -362,6 +363,19 @@ export class ConversationStore {
   }
 
   private notifyChange(): void {
-    this.onStateChange(this.state);
+    if (!this.suppressNotify) {
+      this.onStateChange(this.state);
+    }
+  }
+
+  /**
+   * Batch multiple store operations into a single notification.
+   * Suppresses notifyChange during fn(), then fires one notification at the end.
+   */
+  batchUpdate(fn: () => void): void {
+    this.suppressNotify = true;
+    fn();
+    this.suppressNotify = false;
+    this.notifyChange();
   }
 }

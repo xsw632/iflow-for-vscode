@@ -155,10 +155,20 @@ class IFlowApp {
 
   private handleMessage(message: ExtensionMessage): void {
     switch (message.type) {
-      case 'stateUpdated':
+      case 'stateUpdated': {
+        const previousConversationId = this.state?.currentConversationId ?? null;
+        const wasStreaming = this.state?.isStreaming ?? false;
         this.state = message.state;
-        this.render();
+        const conversationChanged = previousConversationId !== (this.state.currentConversationId ?? null);
+        if (this.state.isStreaming && wasStreaming) {
+          // During streaming, only update the last message instead of full DOM rebuild
+          this.updateStreamingContent();
+        } else {
+          // Only smooth-scroll when switching/new conversation.
+          this.render(conversationChanged);
+        }
         break;
+      }
 
       case 'pickedFiles':
         this.handlePickedFiles(message.files);
@@ -177,15 +187,17 @@ class IFlowApp {
             existing.truncated = file.truncated;
           }
         }
+        this.renderAttachedFiles();
         break;
 
       case 'streamChunk':
-        this.scrollToBottom();
+        // Streaming updates are handled by stateUpdated to avoid duplicate scroll work.
         break;
 
       case 'streamEnd':
       case 'streamError':
-        this.render();
+        // No render() needed here — the stateUpdated with isStreaming=false
+        // already triggers a full render.
         break;
     }
   }
@@ -204,9 +216,12 @@ class IFlowApp {
     this.renderAttachedFiles();
   }
 
-  private render(): void {
+  private render(smoothScrollToBottom = false): void {
     const app = document.getElementById('app');
     if (!app) return;
+
+    // Hide during DOM rebuild to prevent visible scroll-from-top flash
+    app.style.visibility = 'hidden';
 
     app.innerHTML = `
       <div class="container">
@@ -217,7 +232,77 @@ class IFlowApp {
     `;
 
     this.attachEventListeners();
-    // Only scroll if we are not manually scrolled up? For now always scroll to bottom on render
+    this.scrollToBottom(smoothScrollToBottom);
+
+    // Restore visibility after scroll position is set
+    requestAnimationFrame(() => {
+      app.style.visibility = 'visible';
+    });
+  }
+
+  /**
+   * Incremental update during streaming: only update the last assistant message
+   * and the pending indicator, avoiding a full DOM rebuild.
+   */
+  private updateStreamingContent(): void {
+    const conversation = this.getCurrentConversation();
+    if (!conversation) {
+      this.render();
+      return;
+    }
+
+    const container = document.getElementById('messages-container');
+    if (!container) {
+      this.render();
+      return;
+    }
+
+    const messages = conversation.messages;
+    const lastMsg = messages[messages.length - 1];
+    if (!lastMsg || lastMsg.role !== 'assistant') {
+      this.render();
+      return;
+    }
+
+    // Update the last assistant message content
+    const msgElements = container.querySelectorAll('.message');
+    const lastMsgEl = msgElements[msgElements.length - 1];
+    if (!lastMsgEl || !lastMsgEl.classList.contains('assistant')) {
+      this.render();
+      return;
+    }
+
+    const contentEl = lastMsgEl.querySelector('.message-content');
+    if (contentEl) {
+      contentEl.innerHTML = lastMsg.blocks.map(b => this.renderBlock(b)).join('');
+
+      // Re-attach collapsible listeners for this message only
+      lastMsgEl.querySelectorAll('[data-collapsible]').forEach(header => {
+        header.addEventListener('click', () => {
+          const next = header.nextElementSibling;
+          next?.classList.toggle('collapsed');
+        });
+      });
+
+      // Re-attach copy button listeners for this message only
+      lastMsgEl.querySelectorAll('.copy-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const copyContent = (btn as HTMLElement).dataset.content || '';
+          navigator.clipboard.writeText(copyContent);
+        });
+      });
+    }
+
+    // Update pending indicator
+    const existingIndicator = container.querySelector('.pending-indicator');
+    if (this.state?.isStreaming) {
+      if (!existingIndicator) {
+        container.insertAdjacentHTML('beforeend', this.renderPendingIndicator());
+      }
+    } else {
+      existingIndicator?.remove();
+    }
+
     this.scrollToBottom();
   }
 
@@ -585,8 +670,9 @@ class IFlowApp {
     return `
       <div class="attached-files" id="attached-files">
         ${this.attachedFiles.map((f, i) => `
-          <div class="file-chip">
+          <div class="file-chip ${f.content === undefined ? 'loading' : ''}">
             <span class="file-name">${this.getFileName(f.path)}</span>
+            ${f.content === undefined ? '<span class="file-loading-indicator">⏳</span>' : ''}
             <button class="remove-file" data-index="${i}">×</button>
           </div>
         `).join('')}
@@ -1120,6 +1206,11 @@ class IFlowApp {
 
     if (!content && this.attachedFiles.length === 0) return;
 
+    // Prevent sending while file contents are still loading
+    if (this.attachedFiles.length > 0 && this.attachedFiles.some(f => f.content === undefined)) {
+      return;
+    }
+
     this.vscode.postMessage({
       type: 'sendMessage',
       content: content || '',
@@ -1142,10 +1233,13 @@ class IFlowApp {
     }
   }
 
-  private scrollToBottom(): void {
+  private scrollToBottom(smooth = false): void {
     const container = document.getElementById('messages-container');
     if (container) {
-      container.scrollTop = container.scrollHeight;
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior: smooth ? 'smooth' : 'auto'
+      });
     }
   }
 
