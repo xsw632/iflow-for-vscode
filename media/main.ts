@@ -88,6 +88,7 @@ type WebviewMessage =
   | { type: 'pickFiles' }
   | { type: 'listWorkspaceFiles'; query: string }
   | { type: 'readFiles'; paths: string[] }
+  | { type: 'openFile'; path: string }
   | { type: 'clearConversation' }
   | { type: 'newConversation' }
   | { type: 'switchConversation'; conversationId: string }
@@ -137,6 +138,7 @@ class IFlowApp {
   private showModeMenu = false;
   private slashSelectedIndex = 0;
   private slashMenuMode: 'commands' | 'models' | 'modes' = 'commands';
+  private composerResizeObserver: ResizeObserver | null = null;
 
   constructor() {
     this.vscode = acquireVsCodeApi();
@@ -232,6 +234,7 @@ class IFlowApp {
     `;
 
     this.attachEventListeners();
+    this.setupComposerLayoutObserver();
     this.scrollToBottom(smoothScrollToBottom);
 
     // Restore visibility after scroll position is set
@@ -304,6 +307,39 @@ class IFlowApp {
     }
 
     this.scrollToBottom();
+  }
+
+  private setupComposerLayoutObserver(): void {
+    this.composerResizeObserver?.disconnect();
+    this.composerResizeObserver = null;
+
+    const composer = document.querySelector('.composer') as HTMLElement | null;
+    if (!composer) {
+      return;
+    }
+
+    if (typeof ResizeObserver === 'undefined') {
+      this.syncMessagesBottomInset();
+      return;
+    }
+
+    this.composerResizeObserver = new ResizeObserver(() => {
+      this.syncMessagesBottomInset();
+    });
+    this.composerResizeObserver.observe(composer);
+    this.syncMessagesBottomInset();
+  }
+
+  private syncMessagesBottomInset(): void {
+    const messages = (document.getElementById('messages-container') || document.querySelector('.messages')) as HTMLElement | null;
+    const composer = document.querySelector('.composer') as HTMLElement | null;
+    if (!messages || !composer) {
+      return;
+    }
+
+    const minInset = 140;
+    const inset = Math.max(minInset, composer.offsetHeight + 24);
+    messages.style.paddingBottom = `${inset}px`;
   }
 
   // Top Bar - conversation selector (left) + new chat button (right)
@@ -454,7 +490,7 @@ class IFlowApp {
 
     if (!conversation || conversation.messages.length === 0) {
       return `
-        <div class="messages">
+        <div class="messages" id="messages-container">
           <div class="empty-state">
             <div class="logo"><img src="${this.faviconUri}" alt="IFlow" class="logo-icon" /></div>
             <h2>Welcome to IFlow</h2>
@@ -485,7 +521,10 @@ class IFlowApp {
         ${message.attachedFiles.length > 0 ? `
           <div class="attached-files-display">
             ${message.attachedFiles.map(f => `
-              <span class="file-chip small">${this.getFileName(f.path)}</span>
+              <button class="file-chip small file-open-btn" data-open-file-path="${this.escapeAttr(f.path)}" title="Open ${this.escapeAttr(this.getFileName(f.path))}">
+                <span class="file-icon">${this.getFileIcon(f.path)}</span>
+                <span class="file-name">${this.escapeHtml(this.getFileName(f.path))}</span>
+              </button>
             `).join('')}
           </div>
         ` : ''}
@@ -513,24 +552,18 @@ class IFlowApp {
         `;
 
       case 'tool':
+        {
+          const detailPreview = this.renderToolDetailPreview(block);
         return `
-          <div class="block-tool ${block.status}">
-            <div class="tool-header" data-collapsible>
-              <span class="tool-icon">${block.status === 'running' ? '⏳' : block.status === 'completed' ? '✓' : '✗'}</span>
-              <span class="tool-name">${this.escapeHtml(block.name)}</span>
-              <span class="tool-summary">${this.escapeHtml(this.getToolSummary(block))}</span>
-              <span class="expand-icon">▼</span>
+          <div class="tool-entry">
+            <div class="block-tool ${block.status}">
+              <span class="tool-icon ${block.status}">${block.status === 'running' ? '⏳' : block.status === 'completed' ? '✓' : '✗'}</span>
+              <span class="tool-headline">${this.escapeHtml(this.getToolHeadline(block))}</span>
             </div>
-            <div class="tool-content collapsed">
-              ${block.output ? `
-                <div class="tool-output">
-                  <strong>Output:</strong>
-                  <pre>${this.escapeHtml(block.output)}</pre>
-                </div>
-              ` : ''}
-            </div>
+            ${detailPreview}
           </div>
         `;
+        }
 
       case 'thinking':
         return `
@@ -573,39 +606,472 @@ class IFlowApp {
     }
   }
 
-  private getToolSummary(block: Extract<OutputBlock, { type: 'tool' }>): string {
-    // Use label if available (human-readable summary from SDK)
-    if (block.label) {
-      return block.label;
-    }
-    // Extract meaningful summary from input args based on tool name
-    const input = block.input;
-    if (!input || Object.keys(input).length === 0) return '';
+  private getToolHeadline(block: Extract<OutputBlock, { type: 'tool' }>): string {
+    const toolName = (block.name || '').toLowerCase();
+    const input = block.input || {};
+    const toolKind = this.getToolKind(block);
 
-    // Common file-related tools: show the file path
-    const filePath = input.file_path || input.path || input.filePath;
-    if (typeof filePath === 'string') return filePath;
-
-    // Command tools: show the command
-    const command = input.command || input.cmd;
-    if (typeof command === 'string') {
-      return command.length > 80 ? command.substring(0, 77) + '...' : command;
-    }
-
-    // Fallback: show first string value
-    for (const val of Object.values(input)) {
-      if (typeof val === 'string' && val.length > 0) {
-        return val.length > 80 ? val.substring(0, 77) + '...' : val;
+    // For file operations, prioritize showing the file path over generic label
+    if (toolKind === 'read' || toolName.includes('read')) {
+      const path = this.getInputString(input, ['file_path', 'path', 'filePath', 'file']);
+      if (path) {
+        const lineRange = this.getToolLineRange(input);
+        return `Read ${this.getFileName(path)}${lineRange}`;
       }
     }
+
+    if (toolKind === 'write') {
+      const path = this.getInputString(input, ['file_path', 'path', 'filePath', 'file']);
+      if (path) {
+        return `Write ${this.getFileName(path)}`;
+      }
+    }
+
+    if (toolKind === 'edit') {
+      const path = this.getInputString(input, ['file_path', 'path', 'filePath', 'file']);
+      if (path) {
+        return `Edit ${this.getFileName(path)}`;
+      }
+    }
+
+    // Use label if available (for non-file tools or when file path is unknown)
+    const label = (block.label || '').trim();
+    if (label) {
+      return label;
+    }
+
+    // Fallback logic for tools without label or file path
+    if (toolKind === 'read') {
+      return 'Read';
+    }
+
+    if (toolKind === 'search' && toolName.includes('glob')) {
+      const pattern = this.getInputString(input, ['pattern', 'glob']);
+      return pattern ? `Glob pattern: "${pattern}"` : 'Glob';
+    }
+
+    if (toolKind === 'search' && toolName.includes('grep')) {
+      const pattern = this.getInputString(input, ['pattern', 'query', 'search']);
+      const scope = this.getInputString(input, ['path', 'cwd', 'directory', 'file_path']);
+      if (pattern && scope) {
+        return `Grep "${pattern}" (in ${this.shortenPath(scope)})`;
+      }
+      if (pattern) {
+        return `Grep "${pattern}"`;
+      }
+      return 'Grep';
+    }
+
+    if (toolKind === 'write') {
+      return 'Write File';
+    }
+
+    if (toolKind === 'edit') {
+      return 'Edit File';
+    }
+
+    const command = this.getInputString(input, ['command', 'cmd']);
+    if (command) {
+      return `Run ${command.length > 80 ? `${command.slice(0, 77)}...` : command}`;
+    }
+
+    const path = this.getInputString(input, ['file_path', 'path', 'filePath']);
+    if (path) {
+      return `${this.humanizeToolName(block.name)} ${this.shortenPath(path)}`;
+    }
+
+    return this.humanizeToolName(block.name);
+  }
+
+  private renderToolDetailPreview(block: Extract<OutputBlock, { type: 'tool' }>): string {
+    const edited = this.renderEditedFilePreview(block);
+    if (edited) {
+      return edited;
+    }
+    const written = this.renderWriteFilePreview(block);
+    if (written) {
+      return written;
+    }
+    const read = this.renderReadFilePreview(block);
+    if (read) {
+      return read;
+    }
+    return this.renderCommandPreview(block);
+  }
+
+  private renderWriteFilePreview(block: Extract<OutputBlock, { type: 'tool' }>): string {
+    if (block.status !== 'completed') {
+      return '';
+    }
+    if (this.getToolKind(block) !== 'write') {
+      return '';
+    }
+
+    const filePath = this.getInputString(block.input || {}, ['file_path', 'path', 'filePath', 'file']) || 'unknown file';
+    const content = this.getInputString(block.input || {}, ['content', 'file_content', 'text', 'body', 'data']);
+    const raw = (content || block.output || '').trim();
+    if (!raw) {
+      return '';
+    }
+
+    const lines = raw.split('\n');
+    const maxLines = 220;
+    const visible = lines.slice(0, maxLines);
+    if (lines.length > maxLines) {
+      visible.push(`... ${lines.length - maxLines} more lines`);
+    }
+
+    const lineHtml = visible.map((line, idx) => `
+      <div class="diff-line add">
+        <span class="diff-line-no">${idx + 1}</span>
+        <span class="diff-sign">+</span>
+        <span class="diff-text">${this.escapeHtml(line)}</span>
+      </div>
+    `).join('');
+
+    return `
+      <div class="edited-file-preview">
+        <div class="edited-file-header">
+          <span class="edited-file-title">Written file</span>
+          <span class="edited-file-name">${this.escapeHtml(this.shortenPath(filePath))}</span>
+          <span class="edited-file-stats">+${lines.length}</span>
+        </div>
+        <div class="edited-file-diff-scroll">
+          ${lineHtml}
+        </div>
+      </div>
+    `;
+  }
+
+  private renderReadFilePreview(block: Extract<OutputBlock, { type: 'tool' }>): string {
+    if (block.status !== 'completed') {
+      return '';
+    }
+    if (this.getToolKind(block) !== 'read') {
+      return '';
+    }
+
+    const filePath = this.getInputString(block.input || {}, ['file_path', 'path', 'filePath', 'file']) || 'unknown file';
+    const raw = (block.output || '').trim();
+    if (!raw) {
+      return '';
+    }
+
+    const lines = raw.split('\n');
+    const maxLines = 220;
+    const visible = lines.slice(0, maxLines);
+    if (lines.length > maxLines) {
+      visible.push(`... ${lines.length - maxLines} more lines`);
+    }
+
+    const lineHtml = visible.map((line, idx) => `
+      <div class="read-file-line">
+        <span class="read-file-line-no">${idx + 1}</span>
+        <span class="read-file-line-text">${this.escapeHtml(line)}</span>
+      </div>
+    `).join('');
+
+    return `
+      <div class="read-file-preview">
+        <div class="read-file-header">
+          <span class="read-file-title">Read file</span>
+          <span class="read-file-name">${this.escapeHtml(this.shortenPath(filePath))}</span>
+          <span class="read-file-stats">${lines.length} lines</span>
+        </div>
+        <div class="read-file-scroll">
+          ${lineHtml}
+        </div>
+      </div>
+    `;
+  }
+
+  private renderEditedFilePreview(block: Extract<OutputBlock, { type: 'tool' }>): string {
+    if (block.status !== 'completed') {
+      return '';
+    }
+
+    const diff = this.extractEditedFileDiff(block);
+    if (!diff || diff.lines.length === 0) {
+      return '';
+    }
+
+    const lineHtml = diff.lines.map(line => {
+      const sign = line.kind === 'add' ? '+' : line.kind === 'del' ? '-' : line.kind === 'meta' ? '@' : ' ';
+      return `
+        <div class="diff-line ${line.kind}">
+          <span class="diff-line-no">${line.lineNo ?? ''}</span>
+          <span class="diff-sign">${sign}</span>
+          <span class="diff-text">${this.escapeHtml(line.text)}</span>
+        </div>
+      `;
+    }).join('');
+
+    return `
+      <div class="edited-file-preview">
+        <div class="edited-file-header">
+          <span class="edited-file-title">Edited file</span>
+          <span class="edited-file-name">${this.escapeHtml(diff.fileName)}</span>
+          <span class="edited-file-stats">+${diff.added} -${diff.removed}</span>
+        </div>
+        <div class="edited-file-diff-scroll">
+          ${lineHtml}
+        </div>
+      </div>
+    `;
+  }
+
+  private renderCommandPreview(block: Extract<OutputBlock, { type: 'tool' }>): string {
+    const preview = this.extractCommandPreview(block);
+    if (!preview) {
+      return '';
+    }
+
+    const linesHtml = preview.lines.map((line, idx) => `
+      <div class="command-line">
+        <span class="command-line-no">${idx + 1}</span>
+        <span class="command-line-text">${this.escapeHtml(line)}</span>
+      </div>
+    `).join('');
+
+    return `
+      <div class="command-preview">
+        <div class="command-preview-header">
+          <span class="command-preview-title">Bash command</span>
+          <code class="command-preview-cmd">${this.escapeHtml(preview.command)}</code>
+        </div>
+        <div class="command-output-scroll">
+          ${linesHtml}
+        </div>
+      </div>
+    `;
+  }
+
+  private extractCommandPreview(block: Extract<OutputBlock, { type: 'tool' }>): { command: string; lines: string[] } | null {
+    const toolName = (block.name || '').toLowerCase();
+    const command = this.getInputString(block.input || {}, ['command', 'cmd', 'script']);
+    const output = (block.output || '').trim();
+    const looksLikeCommandTool = toolName.includes('bash') || toolName.includes('shell') || toolName.includes('command') || command !== null;
+
+    if (!looksLikeCommandTool) {
+      return null;
+    }
+    if (!command && !output) {
+      return null;
+    }
+
+    const lines = output ? output.split('\n') : (block.status === 'running' ? ['Running...'] : ['(no output)']);
+    const maxLines = 260;
+    const visible = lines.slice(0, maxLines);
+    if (lines.length > maxLines) {
+      visible.push(`... ${lines.length - maxLines} more lines`);
+    }
+
+    return {
+      command: command || 'shell command',
+      lines: visible
+    };
+  }
+
+  private extractEditedFileDiff(block: Extract<OutputBlock, { type: 'tool' }>): { fileName: string; added: number; removed: number; lines: { kind: 'add' | 'del' | 'ctx' | 'meta'; text: string; lineNo?: number }[] } | null {
+    const patchText = this.findPatchText(block);
+    if (!patchText) {
+      return null;
+    }
+
+    const lines = patchText.split('\n');
+    let fileName = this.getInputString(block.input, ['file_path', 'path', 'filePath', 'file']) || '';
+
+    const fileMarker = lines.find(line => line.startsWith('*** Update File: ') || line.startsWith('*** Add File: ') || line.startsWith('*** Delete File: '));
+    if (fileMarker) {
+      fileName = fileMarker.replace(/^(\*\*\* Update File: |\*\*\* Add File: |\*\*\* Delete File: )/, '').trim();
+    } else {
+      const gitMarker = lines.find(line => line.startsWith('diff --git '));
+      if (gitMarker) {
+        const m = gitMarker.match(/^diff --git a\/(.+?) b\/(.+)$/);
+        if (m) {
+          fileName = m[2];
+        }
+      }
+    }
+
+    const renderedLines: { kind: 'add' | 'del' | 'ctx' | 'meta'; text: string; lineNo?: number }[] = [];
+    let added = 0;
+    let removed = 0;
+    let oldLine: number | null = null;
+    let newLine: number | null = null;
+
+    for (const line of lines) {
+      if (!line) {
+        continue;
+      }
+      if (line.startsWith('@@')) {
+        const hunk = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+        if (hunk) {
+          oldLine = Number(hunk[1]);
+          newLine = Number(hunk[2]);
+        }
+        renderedLines.push({ kind: 'meta', text: line });
+        continue;
+      }
+      if (line.startsWith('diff --git ') || line.startsWith('*** ') || line.startsWith('--- ') || line.startsWith('+++ ')) {
+        renderedLines.push({ kind: 'meta', text: line });
+        continue;
+      }
+      if (line.startsWith('+') && !line.startsWith('+++')) {
+        added++;
+        const lineNo = newLine ?? undefined;
+        renderedLines.push({ kind: 'add', text: line.substring(1), lineNo });
+        if (newLine !== null) newLine++;
+        continue;
+      }
+      if (line.startsWith('-') && !line.startsWith('---')) {
+        removed++;
+        const lineNo = oldLine ?? undefined;
+        renderedLines.push({ kind: 'del', text: line.substring(1), lineNo });
+        if (oldLine !== null) oldLine++;
+        continue;
+      }
+      if (line.startsWith(' ') || line.startsWith('|')) {
+        const lineNo = newLine ?? undefined;
+        renderedLines.push({ kind: 'ctx', text: line.replace(/^ /, ''), lineNo });
+        if (oldLine !== null) oldLine++;
+        if (newLine !== null) newLine++;
+      }
+    }
+
+    if (added === 0 && removed === 0) {
+      return null;
+    }
+
+    const maxLines = 220;
+    const visibleLines = renderedLines.slice(0, maxLines);
+    if (renderedLines.length > maxLines) {
+      visibleLines.push({ kind: 'meta', text: `... ${renderedLines.length - maxLines} more lines` });
+    }
+
+    return {
+      fileName: fileName || 'unknown file',
+      added,
+      removed,
+      lines: visibleLines
+    };
+  }
+
+  private findPatchText(block: Extract<OutputBlock, { type: 'tool' }>): string | null {
+    const output = (block.output || '').trim();
+    if (this.looksLikePatch(output)) {
+      return output;
+    }
+
+    for (const value of Object.values(block.input || {})) {
+      if (typeof value === 'string' && this.looksLikePatch(value)) {
+        return value;
+      }
+    }
+    return null;
+  }
+
+  private looksLikePatch(text: string): boolean {
+    if (!text) return false;
+    return text.includes('*** Begin Patch') ||
+      text.includes('*** Update File:') ||
+      text.includes('diff --git ') ||
+      text.includes('@@ ');
+  }
+
+  private getToolKind(block: Extract<OutputBlock, { type: 'tool' }>): 'read' | 'write' | 'edit' | 'search' | 'command' | 'unknown' {
+    const name = (block.name || '').toLowerCase();
+    const input = block.input || {};
+
+    if (this.getInputString(input, ['command', 'cmd', 'script'])) {
+      return 'command';
+    }
+    if (/bash|shell|terminal|exec|command|run/.test(name)) {
+      return 'command';
+    }
+    if (/apply.?patch|edit|replace|update|modify|rewrite/.test(name) || this.looksLikePatch(block.output || '')) {
+      return 'edit';
+    }
+    if (/write|create|save|new.?file/.test(name)) {
+      return 'write';
+    }
+    if (/read|open|cat/.test(name)) {
+      return 'read';
+    }
+    if (/grep|glob|search|find|list|ls|rg/.test(name)) {
+      return 'search';
+    }
+    return 'unknown';
+  }
+
+  private getToolLineRange(input: Record<string, unknown>): string {
+    const lineStart = this.getInputNumber(input, ['line_start', 'lineStart', 'start_line', 'startLine']);
+    const lineEnd = this.getInputNumber(input, ['line_end', 'lineEnd', 'end_line', 'endLine']);
+
+    if (lineStart && lineEnd) {
+      return ` (lines ${lineStart}-${lineEnd})`;
+    }
+    if (lineStart) {
+      return ` (line ${lineStart})`;
+    }
     return '';
+  }
+
+  private getInputString(input: Record<string, unknown>, keys: string[]): string | null {
+    for (const key of keys) {
+      const value = input[key];
+      if (typeof value === 'string' && value.trim()) {
+        return value.trim();
+      }
+      if (Array.isArray(value)) {
+        const firstString = value.find(v => typeof v === 'string' && v.trim()) as string | undefined;
+        if (firstString) {
+          return firstString.trim();
+        }
+      }
+    }
+    return null;
+  }
+
+  private getInputNumber(input: Record<string, unknown>, keys: string[]): number | null {
+    for (const key of keys) {
+      const value = input[key];
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        return value;
+      }
+      if (typeof value === 'string') {
+        const n = Number(value);
+        if (Number.isFinite(n)) {
+          return n;
+        }
+      }
+    }
+    return null;
+  }
+
+  private humanizeToolName(name: string): string {
+    const normalized = name
+      .replace(/([a-z])([A-Z])/g, '$1 $2')
+      .replace(/[_-]+/g, ' ')
+      .trim();
+    if (!normalized) {
+      return 'Tool';
+    }
+    return normalized[0].toUpperCase() + normalized.slice(1);
+  }
+
+  private shortenPath(p: string): string {
+    if (p.length <= 60) {
+      return p;
+    }
+    return `...${p.slice(-57)}`;
   }
 
   private renderPendingIndicator(): string {
     return `
       <div class="pending-indicator">
         <div class="bounce-logo"><img src="${this.faviconUri}" alt="IFlow" class="bounce-logo-icon" /></div>
-        <span>Scheming...</span>
+        <span>Flowing...</span>
       </div>
     `;
   }
@@ -632,8 +1098,8 @@ class IFlowApp {
             ${this.showMentionMenu ? this.renderMentionMenuHtml() : ''}
           </div>
           ${this.state?.isStreaming ? `
-            <button id="cancel-btn" class="icon-btn danger" title="Stop">
-              <span class="icon">⏹</span>
+            <button id="cancel-btn" class="icon-btn danger stop-btn" title="Stop">
+              <span class="stop-glyph" aria-hidden="true"></span>
             </button>
           ` : `
             <button id="send-btn" class="icon-btn primary" title="Send">
@@ -671,7 +1137,10 @@ class IFlowApp {
       <div class="attached-files" id="attached-files">
         ${this.attachedFiles.map((f, i) => `
           <div class="file-chip ${f.content === undefined ? 'loading' : ''}">
-            <span class="file-name">${this.getFileName(f.path)}</span>
+            <button class="file-open-btn" data-open-file-path="${this.escapeAttr(f.path)}" title="Open ${this.escapeAttr(this.getFileName(f.path))}">
+              <span class="file-icon">${this.getFileIcon(f.path)}</span>
+              <span class="file-name">${this.escapeHtml(this.getFileName(f.path))}</span>
+            </button>
             ${f.content === undefined ? '<span class="file-loading-indicator">⏳</span>' : ''}
             <button class="remove-file" data-index="${i}">×</button>
           </div>
@@ -721,6 +1190,7 @@ class IFlowApp {
     if (container) {
       container.outerHTML = this.renderAttachedFilesHtml();
       this.attachFileRemoveListeners();
+      this.attachFileOpenListeners();
     } else {
       const composer = document.querySelector('.composer');
       if (composer && this.attachedFiles.length > 0) {
@@ -728,8 +1198,10 @@ class IFlowApp {
         div.innerHTML = this.renderAttachedFilesHtml();
         composer.insertBefore(div.firstElementChild!, composer.firstChild);
         this.attachFileRemoveListeners();
+        this.attachFileOpenListeners();
       }
     }
+    this.syncMessagesBottomInset();
   }
 
   private renderMentionMenu(): void {
@@ -930,6 +1402,7 @@ class IFlowApp {
 
     // File remove buttons
     this.attachFileRemoveListeners();
+    this.attachFileOpenListeners();
   }
 
   private attachSlashListeners(): void {
@@ -967,6 +1440,20 @@ class IFlowApp {
         const index = parseInt((btn as HTMLElement).dataset.index || '0', 10);
         this.attachedFiles.splice(index, 1);
         this.renderAttachedFiles();
+      });
+    });
+  }
+
+  private attachFileOpenListeners(): void {
+    document.querySelectorAll('[data-open-file-path]').forEach(btn => {
+      if ((btn as HTMLElement).dataset.openBound === '1') {
+        return;
+      }
+      (btn as HTMLElement).dataset.openBound = '1';
+      btn.addEventListener('click', () => {
+        const path = (btn as HTMLElement).dataset.openFilePath;
+        if (!path) return;
+        this.vscode.postMessage({ type: 'openFile', path });
       });
     });
   }
@@ -1231,6 +1718,7 @@ class IFlowApp {
     if (textarea.scrollHeight > 28) {
       textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
     }
+    this.syncMessagesBottomInset();
   }
 
   private scrollToBottom(smooth = false): void {
@@ -1250,6 +1738,20 @@ class IFlowApp {
 
   private getFileName(path: string): string {
     return path.split(/[/\\]/).pop() || path;
+  }
+
+  private getFileIcon(path: string): string {
+    const lower = path.toLowerCase();
+    if (/\.(png|jpe?g|gif|webp|bmp|svg|ico|tiff?)$/.test(lower)) {
+      return '🖼';
+    }
+    if (/\.(pdf)$/.test(lower)) {
+      return '📕';
+    }
+    if (/\.(doc|docx|ppt|pptx|xls|xlsx)$/.test(lower)) {
+      return '📄';
+    }
+    return '📎';
   }
 
   private formatTime(timestamp: number): string {

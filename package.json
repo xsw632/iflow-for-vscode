@@ -3,7 +3,7 @@
   "publisher": "YauMike",
   "displayName": "IFlow for VS Code",
   "description": "Bring IFlow (iflow CLI) into VS Code: chat panel, commands, and editor-group lock.",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "repository": "https://github.com/xsw632/iflow-for-vscode.git",
   "homepage": "https://github.com/xsw632/iflow-for-vscode",
   "bugs": {
@@ -86,12 +86,18 @@
       "title": "IFlow",
       "properties": {
         "iflow.nodePath": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "default": null,
           "description": "Path to the Node.js executable (v22+). Required if your default Node version is too old. Example: ~/.nvm/versions/node/v22.0.0/bin/node"
         },
         "iflow.baseUrl": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "default": null,
           "description": "Optional base URL for the OpenAI-compatible API endpoint (e.g. https://apis.iflow.cn/v1). Only set this if you need the extension to override the CLI's configured endpoint."
         },

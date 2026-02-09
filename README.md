@@ -10,6 +10,10 @@
 ### 2) Secondary Side Bar 侧边栏入口
 ![IFlow Secondary Sidebar](https://raw.githubusercontent.com/xsw632/iflow-for-vscode/main/media/image-2.png)
 
+### 3) Edit File 以及 Bash 等 tool 渲染
+![Tool Call](https://raw.githubusercontent.com/xsw632/iflow-for-vscode/main/media/image-3.png)
+
+
 ## 功能
 
 - **IFlow 面板**：在 Activity Bar / Secondary Side Bar 中打开 IFlow（Webview）面板。

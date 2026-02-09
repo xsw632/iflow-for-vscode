@@ -5,11 +5,21 @@ import { ConversationStore } from './store';
 import { IFlowClient } from './iflowClient';
 import { WebviewMessage, ExtensionMessage, AttachedFile } from './protocol';
 
+interface CliAvailabilityResult {
+  version: string | null;
+  diagnostics: string;
+}
+
 /**
  * Shared handler for webview message processing, CLI checking, and HTML generation.
  * Used by both IFlowPanel (independent panel) and IFlowSidebarProvider (sidebar view).
  */
 export class WebviewHandler {
+  private static readonly CLI_CHECK_SUCCESS_TTL_MS = 2 * 60 * 1000;
+  private static readonly CLI_CHECK_FAILURE_TTL_MS = 15 * 1000;
+  private static sharedCliCheckCache: { result: CliAvailabilityResult; checkedAt: number } | null = null;
+  private static sharedCliCheckInFlight: Promise<CliAvailabilityResult> | null = null;
+
   private readonly store: ConversationStore;
   private readonly client: IFlowClient;
   private readonly extensionUri: vscode.Uri;
@@ -48,8 +58,9 @@ export class WebviewHandler {
             e.affectsConfiguration('iflow.port') ||
             e.affectsConfiguration('iflow.timeout')) {
           await this.client.dispose();
+          WebviewHandler.invalidateSharedCliCheck();
           this.cliChecked = false;
-          await this.checkCliAvailability();
+          await this.checkCliAvailability(true);
         }
       }
     );
@@ -71,8 +82,9 @@ export class WebviewHandler {
       case 'recheckCli':
         await this.client.dispose();
         this.client.clearAutoDetectCache();
+        WebviewHandler.invalidateSharedCliCheck();
         this.cliChecked = false;
-        await this.checkCliAvailability();
+        await this.checkCliAvailability(true);
         break;
 
       case 'pickFiles':
@@ -85,6 +97,10 @@ export class WebviewHandler {
 
       case 'readFiles':
         await this.handleReadFiles(message.paths);
+        break;
+
+      case 'openFile':
+        await this.handleOpenFile(message.path);
         break;
 
       case 'newConversation':
@@ -127,8 +143,53 @@ export class WebviewHandler {
     }
   }
 
-  private async checkCliAvailability(): Promise<void> {
-    const result = await this.client.checkAvailability();
+  private static invalidateSharedCliCheck(): void {
+    this.sharedCliCheckCache = null;
+    this.sharedCliCheckInFlight = null;
+  }
+
+  private static cacheCliCheckResult(result: CliAvailabilityResult): void {
+    this.sharedCliCheckCache = { result, checkedAt: Date.now() };
+  }
+
+  private static isSharedCliCheckFresh(): boolean {
+    if (!this.sharedCliCheckCache) {
+      return false;
+    }
+
+    const ttl = this.sharedCliCheckCache.result.version !== null
+      ? this.CLI_CHECK_SUCCESS_TTL_MS
+      : this.CLI_CHECK_FAILURE_TTL_MS;
+    return Date.now() - this.sharedCliCheckCache.checkedAt < ttl;
+  }
+
+  private async getSharedCliAvailability(forceRefresh = false): Promise<CliAvailabilityResult> {
+    if (forceRefresh) {
+      WebviewHandler.invalidateSharedCliCheck();
+    }
+
+    if (WebviewHandler.isSharedCliCheckFresh() && WebviewHandler.sharedCliCheckCache) {
+      return WebviewHandler.sharedCliCheckCache.result;
+    }
+
+    if (WebviewHandler.sharedCliCheckInFlight) {
+      return WebviewHandler.sharedCliCheckInFlight;
+    }
+
+    WebviewHandler.sharedCliCheckInFlight = this.client.checkAvailability()
+      .then((result) => {
+        WebviewHandler.cacheCliCheckResult(result);
+        return result;
+      })
+      .finally(() => {
+        WebviewHandler.sharedCliCheckInFlight = null;
+      });
+
+    return WebviewHandler.sharedCliCheckInFlight;
+  }
+
+  private async checkCliAvailability(forceRefresh = false): Promise<void> {
+    const result = await this.getSharedCliAvailability(forceRefresh);
     this.store.setCliStatus(result.version !== null, result.version, result.diagnostics);
   }
 
@@ -199,6 +260,14 @@ export class WebviewHandler {
     this.postMessage({ type: 'fileContents', files });
   }
 
+  private async handleOpenFile(filePath: string): Promise<void> {
+    try {
+      await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(filePath));
+    } catch {
+      // no-op: opening preview is best effort
+    }
+  }
+
   private async handleSendMessage(content: string, attachedFiles: AttachedFile[]): Promise<void> {
     // Immediately reflect "running" in UI so Enter has instant feedback.
     // Expensive checks (CLI probe/connect) happen after this optimistic state update.
@@ -251,6 +320,7 @@ export class WebviewHandler {
       (error) => {
         // Mark CLI as unavailable on connection errors so next send retries check
         if (error.includes('connect') || error.includes('ECONNREFUSED') || error.includes('not found') || error.includes('not available')) {
+          WebviewHandler.cacheCliCheckResult({ version: null, diagnostics: error });
           this.store.setCliStatus(false, null, error);
           this.cliChecked = false;
         }

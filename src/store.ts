@@ -263,7 +263,8 @@ export class ConversationStore {
         const lastToolBlock = blocks[blocks.length - 1];
         if (lastToolBlock?.type === 'tool' && lastToolBlock.status === 'running' && lastToolBlock.name === chunk.name) {
           if (chunk.input && Object.keys(chunk.input).length > 0) {
-            lastToolBlock.input = chunk.input;
+            // Merge new input into existing (preserving earlier args)
+            lastToolBlock.input = { ...lastToolBlock.input, ...chunk.input };
           }
           if (chunk.label) {
             lastToolBlock.label = chunk.label;

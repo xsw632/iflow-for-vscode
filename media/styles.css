@@ -427,7 +427,6 @@ body {
 }
 
 /* Tools & Thinking */
-.block-tool,
 .block-thinking {
   margin: var(--spacing-sm) 0;
   border: 1px solid var(--border);
@@ -441,8 +440,7 @@ body {
   opacity: 0.85;
 }
 
-.thinking-header,
-.tool-header {
+.thinking-header {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
@@ -452,30 +450,287 @@ body {
   user-select: none;
 }
 
-.tool-summary {
-  flex: 1;
-  color: var(--text-secondary);
-  font-size: 11px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.thinking-header:hover,
-.tool-header:hover {
+.thinking-header:hover {
   background-color: var(--vscode-list-hoverBackground);
 }
 
-.tool-content,
 .thinking-content {
   padding: var(--spacing-md);
   border-top: 1px solid var(--border);
   background-color: var(--bg-app);
 }
 
-.tool-content.collapsed,
 .thinking-content.collapsed {
   display: none;
+}
+
+.block-tool {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin: 6px 0;
+  padding: 4px 0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.tool-icon {
+  width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.tool-icon.running {
+  animation: pulse-hourglass 1s ease-in-out infinite;
+}
+
+.tool-icon.completed {
+  color: #66d38a;
+}
+
+.tool-icon.error {
+  color: var(--vscode-errorForeground);
+}
+
+.tool-headline {
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+.tool-entry {
+  margin: 6px 0;
+}
+
+.tool-entry .block-tool {
+  margin: 0;
+}
+
+.edited-file-preview {
+  margin: 6px 0 0 26px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background-color: var(--vscode-editor-lineHighlightBackground);
+  overflow: hidden;
+}
+
+.edited-file-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.edited-file-title {
+  color: var(--text-secondary);
+}
+
+.edited-file-name {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.edited-file-stats {
+  margin-left: auto;
+  color: var(--text-secondary);
+}
+
+.edited-file-diff-scroll {
+  height: 260px;
+  overflow: auto;
+  font-family: var(--vscode-editor-font-family, 'Fira Code', monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  scrollbar-width: thin;
+  scrollbar-color: var(--vscode-scrollbarSlider-background) transparent;
+}
+
+.diff-line {
+  display: grid;
+  grid-template-columns: 52px 16px 1fr;
+  align-items: start;
+}
+
+.diff-line-no {
+  text-align: right;
+  padding-right: 8px;
+  color: var(--text-secondary);
+  opacity: 0.85;
+  user-select: none;
+}
+
+.diff-sign {
+  text-align: center;
+  opacity: 0.8;
+  user-select: none;
+}
+
+.diff-text {
+  white-space: pre;
+  min-width: max-content;
+  padding-right: var(--spacing-sm);
+}
+
+.diff-line.add {
+  background-color: rgba(76, 175, 80, 0.16);
+}
+
+.diff-line.del {
+  background-color: rgba(239, 83, 80, 0.16);
+}
+
+.diff-line.meta {
+  color: var(--text-secondary);
+  background-color: var(--vscode-editor-lineHighlightBackground);
+}
+
+.command-preview {
+  margin: 6px 0 0 26px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background-color: var(--vscode-editor-lineHighlightBackground);
+  overflow: hidden;
+}
+
+.command-preview-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.command-preview-title {
+  color: var(--text-secondary);
+}
+
+.command-preview-cmd {
+  color: var(--text-primary);
+  font-family: var(--vscode-editor-font-family, 'Fira Code', monospace);
+  font-size: 12px;
+  background: transparent;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.command-output-scroll {
+  height: 220px;
+  overflow: auto;
+  font-family: var(--vscode-editor-font-family, 'Fira Code', monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  scrollbar-width: thin;
+  scrollbar-color: var(--vscode-scrollbarSlider-background) transparent;
+}
+
+.command-line {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  align-items: start;
+}
+
+.command-line-no {
+  text-align: right;
+  padding-right: 8px;
+  color: var(--text-secondary);
+  opacity: 0.85;
+  user-select: none;
+}
+
+.command-line-text {
+  white-space: pre;
+  min-width: max-content;
+  padding-right: var(--spacing-sm);
+}
+
+.read-file-preview {
+  margin: 6px 0 0 26px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background-color: var(--vscode-editor-lineHighlightBackground);
+  overflow: hidden;
+}
+
+.read-file-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.read-file-title {
+  color: var(--text-secondary);
+}
+
+.read-file-name {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.read-file-stats {
+  margin-left: auto;
+  color: var(--text-secondary);
+}
+
+.read-file-scroll {
+  height: 220px;
+  overflow: auto;
+  font-family: var(--vscode-editor-font-family, 'Fira Code', monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  scrollbar-width: thin;
+  scrollbar-color: var(--vscode-scrollbarSlider-background) transparent;
+}
+
+.read-file-line {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  align-items: start;
+}
+
+.read-file-line-no {
+  text-align: right;
+  padding-right: 8px;
+  color: var(--text-secondary);
+  opacity: 0.85;
+  user-select: none;
+}
+
+.read-file-line-text {
+  white-space: pre;
+  min-width: max-content;
+  padding-right: var(--spacing-sm);
+}
+
+.edited-file-diff-scroll::-webkit-scrollbar,
+.command-output-scroll::-webkit-scrollbar,
+.read-file-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.edited-file-diff-scroll::-webkit-scrollbar-thumb,
+.command-output-scroll::-webkit-scrollbar-thumb,
+.read-file-scroll::-webkit-scrollbar-thumb {
+  background: var(--vscode-scrollbarSlider-background);
+  border-radius: 8px;
+}
+
+.edited-file-diff-scroll::-webkit-scrollbar-thumb:hover,
+.command-output-scroll::-webkit-scrollbar-thumb:hover,
+.read-file-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--vscode-scrollbarSlider-hoverBackground);
+}
+
+@keyframes pulse-hourglass {
+  0% { opacity: 0.4; }
+  50% { opacity: 1; }
+  100% { opacity: 0.4; }
 }
 
 /* Composer - Floating Design */
@@ -510,6 +765,13 @@ body {
   padding: 0 var(--spacing-xs);
 }
 
+.attached-files-display {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-sm);
+}
+
 .file-chip {
   display: flex;
   align-items: center;
@@ -522,6 +784,39 @@ body {
   max-width: 200px;
 }
 
+.file-chip.small {
+  max-width: 240px;
+}
+
+.file-open-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.file-open-btn:hover .file-name {
+  text-decoration: underline;
+}
+
+.file-icon {
+  flex-shrink: 0;
+  opacity: 0.9;
+}
+
+.file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .file-chip .remove-file {
   background: none;
   border: none;
@@ -532,6 +827,7 @@ body {
   align-items: center;
   justify-content: center;
   padding: 2px;
+  flex-shrink: 0;
 }
 
 .file-chip.loading {
@@ -619,6 +915,26 @@ body {
 
 .icon-btn.danger:hover {
   background-color: var(--vscode-inputValidation-errorBackground);
+}
+
+.icon-btn.stop-btn {
+  border-radius: 10px;
+  background-color: var(--vscode-button-secondaryBackground, var(--vscode-toolbar-hoverBackground));
+  color: var(--vscode-button-secondaryForeground, var(--text-primary));
+  border: 1px solid var(--border);
+}
+
+.icon-btn.stop-btn:hover {
+  background-color: var(--vscode-toolbar-hoverBackground);
+  filter: none;
+}
+
+.stop-glyph {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background-color: currentColor;
+  display: inline-block;
 }
 
 /* Status Bar / Controls in Composer */

@@ -85,6 +85,7 @@ export type WebviewMessage =
   | { type: 'pickFiles' }
   | { type: 'listWorkspaceFiles'; query: string }
   | { type: 'readFiles'; paths: string[] }
+  | { type: 'openFile'; path: string }
   | { type: 'clearConversation' }
   | { type: 'newConversation' }
   | { type: 'switchConversation'; conversationId: string }
