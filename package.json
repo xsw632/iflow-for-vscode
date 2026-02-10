@@ -10,7 +10,7 @@
     "url": "https://github.com/xsw632/iflow-for-vscode/issues"
   },
   "engines": {
-    "vscode": "^1.108.1"
+    "vscode": "^1.82.0"
   },
   "categories": [
     "Other"
@@ -138,7 +138,7 @@
   "devDependencies": {
     "@types/mocha": "^10.0.10",
     "@types/node": "22.x",
-    "@types/vscode": "^1.108.1",
+    "@types/vscode": "^1.82.0",
     "@vscode/test-cli": "^0.0.11",
     "@vscode/test-electron": "^2.5.2",
     "eslint": "^9.39.2",
