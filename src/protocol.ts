@@ -4,6 +4,7 @@ export type ConversationMode = 'default' | 'yolo' | 'plan' | 'smart';
 
 export const MODELS = [
   'GLM-4.7',
+  'GLM-5',
   'DeepSeek-V3.2',
   'iFlow-ROME-30BA3B(Preview)',
   'Qwen3-Coder-Plus',
