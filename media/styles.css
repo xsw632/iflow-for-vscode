@@ -534,10 +534,20 @@ body {
 .edited-file-stats {
   margin-left: auto;
   color: var(--text-secondary);
+  display: flex;
+  gap: 6px;
+}
+
+.stat-added {
+  color: #4caf50;
+}
+
+.stat-removed {
+  color: #ef5350;
 }
 
 .edited-file-diff-scroll {
-  height: 260px;
+  max-height: 260px;
   overflow: auto;
   font-family: var(--vscode-editor-font-family, 'Fira Code', monospace);
   font-size: 12px;

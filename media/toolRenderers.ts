@@ -218,7 +218,7 @@ function findPatchText(block: ToolBlock): string | null {
   return null;
 }
 
-function extractEditedFileDiff(block: ToolBlock): { fileName: string; added: number; removed: number; lines: { kind: 'add' | 'del' | 'ctx' | 'meta'; text: string; lineNo?: number }[] } | null {
+function extractEditedFileDiffFromPatch(block: ToolBlock): { fileName: string; added: number; removed: number; lines: { kind: 'add' | 'del' | 'ctx' | 'meta'; text: string; lineNo?: number }[] } | null {
   const patchText = findPatchText(block);
   if (!patchText) {
     return null;
@@ -303,6 +303,53 @@ function extractEditedFileDiff(block: ToolBlock): { fileName: string; added: num
   };
 }
 
+function extractEditedFileDiffFromOldNew(block: ToolBlock): { fileName: string; added: number; removed: number; lines: { kind: 'add' | 'del' | 'ctx' | 'meta'; text: string; lineNo?: number }[] } | null {
+  const input = block.input || {};
+  const oldStr = getInputString(input, ['old_string', 'oldString', 'old_str', 'old_text', 'original', 'search']);
+  const newStr = getInputString(input, ['new_string', 'newString', 'new_str', 'new_text', 'replacement', 'replace']);
+
+  if (oldStr === null && newStr === null) {
+    return null;
+  }
+
+  const fileName = getInputString(input, ['file_path', 'path', 'filePath', 'file']) || 'unknown file';
+  const renderedLines: { kind: 'add' | 'del' | 'ctx' | 'meta'; text: string; lineNo?: number }[] = [];
+  let added = 0;
+  let removed = 0;
+
+  if (oldStr) {
+    const oldLines = oldStr.split('\n');
+    for (const line of oldLines) {
+      removed++;
+      renderedLines.push({ kind: 'del', text: line });
+    }
+  }
+
+  if (newStr) {
+    const newLines = newStr.split('\n');
+    for (const line of newLines) {
+      added++;
+      renderedLines.push({ kind: 'add', text: line });
+    }
+  }
+
+  if (added === 0 && removed === 0) {
+    return null;
+  }
+
+  const maxLines = 220;
+  const visibleLines = renderedLines.slice(0, maxLines);
+  if (renderedLines.length > maxLines) {
+    visibleLines.push({ kind: 'meta', text: `... ${renderedLines.length - maxLines} more lines` });
+  }
+
+  return { fileName, added, removed, lines: visibleLines };
+}
+
+function extractEditedFileDiff(block: ToolBlock): { fileName: string; added: number; removed: number; lines: { kind: 'add' | 'del' | 'ctx' | 'meta'; text: string; lineNo?: number }[] } | null {
+  return extractEditedFileDiffFromPatch(block) || extractEditedFileDiffFromOldNew(block);
+}
+
 function extractCommandPreview(block: ToolBlock): { command: string; lines: string[] } | null {
   const toolName = (block.name || '').toLowerCase();
   const command = getInputString(block.input || {}, ['command', 'cmd', 'script']);
@@ -366,7 +413,7 @@ function renderWriteFilePreview(block: ToolBlock): string {
       <div class="edited-file-header">
         <span class="edited-file-title">Written file</span>
         <span class="edited-file-name">${escapeHtml(shortenPath(filePath))}</span>
-        <span class="edited-file-stats">+${lines.length}</span>
+        <span class="edited-file-stats"><span class="stat-added">+${lines.length}</span></span>
       </div>
       <div class="edited-file-diff-scroll">
         ${lineHtml}
@@ -375,46 +422,9 @@ function renderWriteFilePreview(block: ToolBlock): string {
   `;
 }
 
-function renderReadFilePreview(block: ToolBlock): string {
-  if (block.status !== 'completed') {
-    return '';
-  }
-  if (getToolKind(block) !== 'read') {
-    return '';
-  }
-
-  const filePath = getInputString(block.input || {}, ['file_path', 'path', 'filePath', 'file']) || 'unknown file';
-  const raw = (block.output || '').trim();
-  if (!raw) {
-    return '';
-  }
-
-  const lines = raw.split('\n');
-  const maxLines = 220;
-  const visible = lines.slice(0, maxLines);
-  if (lines.length > maxLines) {
-    visible.push(`... ${lines.length - maxLines} more lines`);
-  }
-
-  const lineHtml = visible.map((line, idx) => `
-    <div class="read-file-line">
-      <span class="read-file-line-no">${idx + 1}</span>
-      <span class="read-file-line-text">${escapeHtml(line)}</span>
-    </div>
-  `).join('');
-
-  return `
-    <div class="read-file-preview">
-      <div class="read-file-header">
-        <span class="read-file-title">Read file</span>
-        <span class="read-file-name">${escapeHtml(shortenPath(filePath))}</span>
-        <span class="read-file-stats">${lines.length} lines</span>
-      </div>
-      <div class="read-file-scroll">
-        ${lineHtml}
-      </div>
-    </div>
-  `;
+function renderReadFilePreview(_block: ToolBlock): string {
+  // Read file is displayed as a single headline line only — no expanded preview
+  return '';
 }
 
 function renderEditedFilePreview(block: ToolBlock): string {
@@ -443,7 +453,7 @@ function renderEditedFilePreview(block: ToolBlock): string {
       <div class="edited-file-header">
         <span class="edited-file-title">Edited file</span>
         <span class="edited-file-name">${escapeHtml(diff.fileName)}</span>
-        <span class="edited-file-stats">+${diff.added} -${diff.removed}</span>
+        <span class="edited-file-stats"><span class="stat-added">+${diff.added}</span> <span class="stat-removed">-${diff.removed}</span></span>
       </div>
       <div class="edited-file-diff-scroll">
         ${lineHtml}
