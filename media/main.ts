@@ -355,7 +355,7 @@ class IFlowApp {
       case 'default': return 'Chat';
       case 'yolo': return 'YOLO';
       case 'plan': return 'Plan';
-      case 'autoEdit': return 'Smart';
+      case 'smart': return 'Smart';
       default: return 'Chat';
     }
   }
@@ -375,7 +375,7 @@ class IFlowApp {
           <span class="mode-option-label">Plan</span>
           <span class="mode-option-desc">Plan before executing</span>
         </div>
-        <div class="mode-option ${mode === 'autoEdit' ? 'active' : ''}" data-mode="autoEdit">
+        <div class="mode-option ${mode === 'smart' ? 'active' : ''}" data-mode="smart">
           <span class="mode-option-label">Smart</span>
           <span class="mode-option-desc">AI-driven edits</span>
         </div>

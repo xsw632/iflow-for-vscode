@@ -150,7 +150,7 @@ suite('IFlowClient', () => {
 
     const opts = FakeRawDataClient.lastOptions as any;
     assert.strictEqual(opts?.authMethodInfo, undefined);
-    assert.strictEqual(opts?.sessionSettings?.permission_mode, 'autoEdit');
+    assert.strictEqual(opts?.sessionSettings?.permission_mode, 'smart');
 
     assert.ok(FakeRawDataClient.sendRawCalls.some(c => c.method === 'session/set_model' && c.params?.modelId === 'model-1'));
   });

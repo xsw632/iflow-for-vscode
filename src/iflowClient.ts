@@ -287,6 +287,7 @@ export class IFlowClient {
       timeout: config.timeout,
       logLevel: config.debugLogging ? 'DEBUG' : 'WARN',
       cwd: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+      fileAccess: true,
     };
 
     if (manualStart) {
@@ -376,6 +377,7 @@ export class IFlowClient {
       const sdk = await getSDK();
       this.client = new sdk.IFlowClient(sdkOptions);
       await this.client.connect();
+      this.patchTransport(this.client);
       this.isConnected = true;
       this.log('Connected to iFlow');
 
@@ -442,7 +444,72 @@ export class IFlowClient {
     return this.isConnected && !this.isCancelled;
   }
 
-  private mapMode(mode: ConversationMode): 'default' | 'autoEdit' | 'yolo' | 'plan' {
+  /**
+   * Monkey-patch SDK transport to prevent WebSocket message loss.
+   *
+   * The SDK's Transport.receiveRawData() registers a one-shot 'message' listener
+   * per call. When multiple messages arrive in the same TCP segment, only the
+   * first is received — subsequent message events fire with no listener attached.
+   *
+   * This patch adds a persistent listener that buffers messages, and overrides
+   * receiveRawData() to consume from that buffer.
+   */
+  private patchTransport(client: SDKClientType): void {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const transport = (client as any).transport;
+    if (!transport?.ws) {
+      this.log('patchTransport: transport or ws not available, skipping');
+      return;
+    }
+
+    const ws = transport.ws;
+    const queue: string[] = [];
+    const waiters: Array<{ resolve: (msg: string) => void; reject: (err: Error) => void }> = [];
+
+    // After connect(), the SDK has already called receiveRawData() once,
+    // registering an old handler. The first message will be caught by BOTH
+    // the old handler and our new listener. Skip it in our listener to
+    // avoid duplicates.
+    let skipNext = true;
+
+    ws.on('message', (data: { toString(): string }) => {
+      const msg = data.toString();
+      if (skipNext) {
+        skipNext = false;
+        return; // Old handler also catches this one
+      }
+      if (waiters.length > 0) {
+        waiters.shift()!.resolve(msg);
+      } else {
+        queue.push(msg);
+      }
+    });
+
+    const rejectAll = (err: Error) => {
+      while (waiters.length > 0) {
+        waiters.shift()!.reject(err);
+      }
+    };
+
+    ws.on('close', () => rejectAll(new Error('Connection closed')));
+    ws.on('error', (err: Error) => rejectAll(err));
+
+    transport.receiveRawData = function (): Promise<string> {
+      if (!transport.isConnected) {
+        return Promise.reject(new Error('Not connected'));
+      }
+      if (queue.length > 0) {
+        return Promise.resolve(queue.shift()!);
+      }
+      return new Promise<string>((resolve, reject) => {
+        waiters.push({ resolve, reject });
+      });
+    };
+
+    this.log('patchTransport: WebSocket message buffering installed');
+  }
+
+  private mapMode(mode: ConversationMode): 'default' | 'smart' | 'yolo' | 'plan' {
     switch (mode) {
       case 'default':
         return 'default';
@@ -450,8 +517,8 @@ export class IFlowClient {
         return 'yolo';
       case 'plan':
         return 'plan';
-      case 'autoEdit':
-        return 'autoEdit';
+      case 'smart':
+        return 'smart';
       default:
         return 'default';
     }

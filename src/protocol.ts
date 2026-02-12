@@ -1,6 +1,6 @@
 // Message types for communication between extension and webview
 
-export type ConversationMode = 'default' | 'yolo' | 'plan' | 'autoEdit';
+export type ConversationMode = 'default' | 'yolo' | 'plan' | 'smart';
 
 export const MODELS = [
   'GLM-4.7',

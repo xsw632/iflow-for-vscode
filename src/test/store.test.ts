@@ -33,7 +33,7 @@ suite('ConversationStore', () => {
           id: 'c1',
           title: 'legacy',
           messages: [],
-          mode: 'autoEdit',
+          mode: 'smart',
           think: false,
           model: 'GLM-4.7',
           createdAt: 1,
@@ -46,7 +46,7 @@ suite('ConversationStore', () => {
     const conversation = store.getCurrentConversation();
 
     assert.ok(conversation);
-    assert.strictEqual(conversation?.mode, 'autoEdit');
+    assert.strictEqual(conversation?.mode, 'smart');
     assert.strictEqual(conversation?.model, 'GLM-4.7');
   });
 

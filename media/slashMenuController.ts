@@ -191,7 +191,7 @@ export class SlashMenuController {
         { value: 'default', label: 'Chat', desc: 'Normal conversation' },
         { value: 'yolo', label: 'YOLO', desc: 'Auto-approve actions' },
         { value: 'plan', label: 'Plan', desc: 'Plan before executing' },
-        { value: 'autoEdit', label: 'Smart', desc: 'AI-driven edits' },
+        { value: 'smart', label: 'Smart', desc: 'AI-driven edits' },
       ];
       return [
         { label: '←', description: 'Back to commands', value: 'back', action: 'back' },
