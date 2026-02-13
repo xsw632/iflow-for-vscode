@@ -5,6 +5,7 @@ const SLASH_COMMANDS = [
   { command: '/', description: 'Show all commands' },
   { command: '/new', description: 'Start a new conversation' },
   { command: '/clear', description: 'Clear current conversation' },
+  { command: '/compact', description: 'Compress conversation context' },
   { command: '/mode', description: 'Change conversation mode' },
   { command: '/think', description: 'Toggle thinking mode' },
   { command: '/model', description: 'Change model' },
@@ -246,6 +247,9 @@ export class SlashMenuController {
         break;
       case '/clear':
         this.host.postMessage({ type: 'clearConversation' });
+        break;
+      case '/compact':
+        this.host.postMessage({ type: 'sendMessage', content: '/compact', attachedFiles: [] });
         break;
       case '/mode':
         this.mode = 'modes';

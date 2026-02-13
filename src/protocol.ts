@@ -17,6 +17,20 @@ export const MODELS = [
 
 export type ModelType = typeof MODELS[number];
 
+// Context window sizes per model (from iFlow CLI's model configuration)
+export const MODEL_CONTEXT_SIZES: Record<ModelType, number> = {
+  'GLM-4.7': 200000,
+  'GLM-5': 200000,
+  'DeepSeek-V3.2': 128000,
+  'iFlow-ROME-30BA3B(Preview)': 256000,
+  'Qwen3-Coder-Plus': 256000,
+  'Kimi-K2-Thinking': 256000,
+  'MiniMax-M2.5': 128000,
+  'MiniMax-M2.1': 128000,
+  'Kimi-K2-0905': 256000,
+  'Kimi-K2.5': 262144,
+};
+
 // Stream chunk types from CLI output
 export type StreamChunk =
   | { chunkType: 'text'; content: string }
@@ -72,6 +86,7 @@ export interface Conversation {
   model: ModelType;
   createdAt: number;
   updatedAt: number;
+  sessionId?: string;
 }
 
 export interface ConversationState {
@@ -81,6 +96,7 @@ export interface ConversationState {
   cliVersion: string | null;
   cliDiagnostics: string | null;
   isStreaming: boolean;
+  contextUsage?: { usedTokens: number; totalTokens: number; percent: number };
 }
 
 // Messages from webview to extension

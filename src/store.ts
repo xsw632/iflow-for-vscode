@@ -8,7 +8,8 @@ import {
   OutputBlock,
   AttachedFile,
   StreamChunk,
-  MODELS
+  MODELS,
+  MODEL_CONTEXT_SIZES
 } from './protocol';
 
 const STORAGE_KEY = 'iflow.conversations';
@@ -37,7 +38,10 @@ export class ConversationStore {
   }
 
   getState(): ConversationState {
-    return this.state;
+    return {
+      ...this.state,
+      contextUsage: this.getContextUsage(),
+    };
   }
 
   getCurrentConversation(): Conversation | null {
@@ -103,6 +107,7 @@ export class ConversationStore {
     if (conversation) {
       conversation.messages = [];
       conversation.title = 'New Conversation';
+      conversation.sessionId = undefined;
       conversation.updatedAt = Date.now();
       this.save();
       this.notifyChange();
@@ -136,6 +141,14 @@ export class ConversationStore {
       conversation.updatedAt = Date.now();
       this.save();
       this.notifyChange();
+    }
+  }
+
+  setSessionId(sessionId: string): void {
+    const conversation = this.getCurrentConversation();
+    if (conversation) {
+      conversation.sessionId = sessionId;
+      this.save();
     }
   }
 
@@ -344,6 +357,50 @@ export class ConversationStore {
         blocks.push({ type: 'warning', message: chunk.message });
         break;
     }
+  }
+
+  private getContextUsage(): { usedTokens: number; totalTokens: number; percent: number } {
+    const conversation = this.getCurrentConversation();
+    if (!conversation) {
+      return { usedTokens: 0, totalTokens: 128000, percent: 0 };
+    }
+
+    const totalTokens = MODEL_CONTEXT_SIZES[conversation.model] || 128000;
+    let usedTokens = 0;
+
+    for (const msg of conversation.messages) {
+      usedTokens += this.estimateTokens(msg.content);
+      for (const block of msg.blocks) {
+        if (block.type === 'tool' && block.output) {
+          usedTokens += this.estimateTokens(block.output);
+        }
+      }
+      if (msg.attachedFiles) {
+        for (const file of msg.attachedFiles) {
+          if (file.content) {
+            usedTokens += this.estimateTokens(file.content);
+          }
+        }
+      }
+    }
+
+    const percent = totalTokens > 0 ? Math.min(100, Math.round((usedTokens / totalTokens) * 100)) : 0;
+    return { usedTokens, totalTokens, percent };
+  }
+
+  private estimateTokens(text: string): number {
+    if (!text) return 0;
+    let tokens = 0;
+    for (const ch of text) {
+      // CJK characters: roughly 0.5 tokens per character (2 chars per token)
+      if (ch.charCodeAt(0) > 0x2E80) {
+        tokens += 0.5;
+      } else {
+        // Latin/ASCII: roughly 0.25 tokens per character (4 chars per token)
+        tokens += 0.25;
+      }
+    }
+    return Math.ceil(tokens);
   }
 
   private deriveTitle(content: string): string {

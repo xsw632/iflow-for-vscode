@@ -333,7 +333,8 @@ export class WebviewHandler {
         mode: conversation.mode,
         think: conversation.think,
         model: conversation.model,
-        workspaceFiles
+        workspaceFiles,
+        sessionId: conversation.sessionId
       },
       (chunk) => {
         this.store.appendToAssistantMessage(chunk);
@@ -362,7 +363,11 @@ export class WebviewHandler {
         });
         this.postMessage({ type: 'streamError', error });
       }
-    );
+    ).then((returnedSessionId) => {
+      if (returnedSessionId) {
+        this.store.setSessionId(returnedSessionId);
+      }
+    });
   }
 
   postMessage(message: ExtensionMessage): void {

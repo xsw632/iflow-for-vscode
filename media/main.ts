@@ -621,6 +621,28 @@ class IFlowApp {
                </select>
              </div>
           </div>
+          ${this.renderContextUsage()}
+        </div>
+      </div>
+    `;
+  }
+
+  private renderContextUsage(): string {
+    const usage = this.state?.contextUsage;
+    if (!usage) return '';
+    const percent = usage.percent;
+    const colorClass = percent >= 80 ? 'context-high' : percent >= 50 ? 'context-mid' : 'context-low';
+    const dashArray = `${percent} ${100 - percent}`;
+    return `
+      <div class="status-right">
+        <div class="context-usage ${colorClass}" title="${usage.usedTokens.toLocaleString()} / ${usage.totalTokens.toLocaleString()} tokens">
+          <svg class="context-pie" width="14" height="14" viewBox="0 0 36 36">
+            <circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--vscode-widget-border, #444)" stroke-width="3.5"/>
+            <circle cx="18" cy="18" r="15.9" fill="none" stroke="currentColor" stroke-width="3.5"
+              stroke-dasharray="${dashArray}" stroke-dashoffset="25"
+              transform="rotate(-90 18 18)"/>
+          </svg>
+          <span>${percent}%</span>
         </div>
       </div>
     `;

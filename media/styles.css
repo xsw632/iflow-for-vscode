@@ -951,6 +951,7 @@ body {
 .composer-status-bar {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   padding: 2px var(--spacing-sm);
   font-size: 11px;
   color: var(--text-secondary);
@@ -966,6 +967,27 @@ body {
 .status-label {
   opacity: 0.7;
   margin-right: 2px;
+}
+
+/* Context Usage Indicator */
+.context-usage {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  opacity: 0.8;
+}
+.context-usage .context-pie {
+  flex-shrink: 0;
+}
+.context-usage.context-low {
+  color: #66d38a;
+}
+.context-usage.context-mid {
+  color: #e8a838;
+}
+.context-usage.context-high {
+  color: var(--vscode-errorForeground, #f85149);
 }
 
 .status-item {

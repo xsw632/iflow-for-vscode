@@ -37,6 +37,7 @@ export interface RunOptions {
   think: boolean;
   model: ModelType;
   workspaceFiles?: string[];
+  sessionId?: string;
 }
 
 interface ManualStartInfo {
@@ -355,15 +356,16 @@ export class IFlowClient {
     onChunk: (chunk: StreamChunk) => void,
     onEnd: () => void,
     onError: (error: string) => void
-  ): Promise<void> {
+  ): Promise<string | undefined> {
     this.isCancelled = false;
     this.inNativeThinking = false;
     this.parser = new ThinkingParser();
+    let returnSessionId: string | undefined;
 
     // Update model in CLI settings so all internal code paths use it
     this.updateIFlowCliModel(options.model);
 
-    this.log(`Starting run with options: ${JSON.stringify({ mode: options.mode, model: options.model, think: options.think })}`);
+    this.log(`Starting run with options: ${JSON.stringify({ mode: options.mode, model: options.model, think: options.think, sessionId: options.sessionId })}`);
 
     try {
       const manualStart = await this.resolveStartMode();
@@ -390,9 +392,20 @@ export class IFlowClient {
       this.isConnected = true;
       this.log('Connected to iFlow');
 
+      // Load existing session to restore context from previous turns
+      if (options.sessionId) {
+        try {
+          await this.client.loadSession(options.sessionId);
+          this.log(`Loaded existing session: ${options.sessionId}`);
+        } catch (err) {
+          this.log(`Failed to load session ${options.sessionId}, continuing with new session: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+
       // Enable/disable thinking via ACP protocol
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const sessionId = (this.client as any).sessionId;
+      returnSessionId = sessionId;
       if (sessionId) {
         await this.sendSetThink(this.client, sessionId, options.think);
       }
@@ -426,6 +439,7 @@ export class IFlowClient {
     } finally {
       await this.disconnect();
     }
+    return returnSessionId;
   }
 
   async cancel(): Promise<void> {
