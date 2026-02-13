@@ -37,6 +37,7 @@ class IFlowApp {
   private showModeMenu = false;
   private composerResizeObserver: ResizeObserver | null = null;
   private pendingConfirmation: { requestId: number; toolName: string; description: string } | null = null;
+  private clearInputOnNextRender = false;
 
   constructor() {
     this.vscode = acquireVsCodeApi();
@@ -54,6 +55,7 @@ class IFlowApp {
       getCurrentConversation: () => this.getCurrentConversation(),
       getInputElement: () => document.getElementById('message-input') as HTMLTextAreaElement | null,
       onSlashMenuClosed: () => {
+        this.clearInputOnNextRender = true;
         this.render();
       }
     });
@@ -106,6 +108,9 @@ class IFlowApp {
           this.updateStreamingContent();
         } else {
           // Only smooth-scroll when switching/new conversation.
+          if (conversationChanged) {
+            this.clearInputOnNextRender = true;
+          }
           this.render(conversationChanged);
         }
         break;
@@ -150,6 +155,13 @@ class IFlowApp {
     const app = document.getElementById('app');
     if (!app) return;
 
+    // Save current input state before DOM rebuild
+    const prevInput = document.getElementById('message-input') as HTMLTextAreaElement;
+    const savedValue = this.clearInputOnNextRender ? '' : (prevInput?.value ?? '');
+    const savedSelStart = prevInput?.selectionStart ?? 0;
+    const savedSelEnd = prevInput?.selectionEnd ?? 0;
+    this.clearInputOnNextRender = false;
+
     // Hide during DOM rebuild to prevent visible scroll-from-top flash
     app.style.visibility = 'hidden';
 
@@ -163,6 +175,18 @@ class IFlowApp {
 
     this.attachEventListeners();
     this.setupComposerLayoutObserver();
+
+    // Restore input state after DOM rebuild
+    if (savedValue) {
+      const newInput = document.getElementById('message-input') as HTMLTextAreaElement;
+      if (newInput) {
+        newInput.value = savedValue;
+        newInput.selectionStart = savedSelStart;
+        newInput.selectionEnd = savedSelEnd;
+        this.autoResizeTextarea(newInput);
+      }
+    }
+
     this.scrollToBottom(smoothScrollToBottom);
 
     // Restore visibility after scroll position is set

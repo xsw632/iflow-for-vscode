@@ -9,8 +9,8 @@ export const MODELS = [
   'iFlow-ROME-30BA3B(Preview)',
   'Qwen3-Coder-Plus',
   'Kimi-K2-Thinking',
-  'MiniMax-M2.1',
   'MiniMax-M2.5',
+  'MiniMax-M2.1',
   'Kimi-K2-0905',
   'Kimi-K2.5'
 ] as const;
