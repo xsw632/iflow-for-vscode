@@ -632,20 +632,33 @@ class IFlowApp {
     if (!usage) return '';
     const percent = usage.percent;
     const colorClass = percent >= 80 ? 'context-high' : percent >= 50 ? 'context-mid' : 'context-low';
-    const dashArray = `${percent} ${100 - percent}`;
+    const label = percent === 0 && usage.usedTokens > 0 ? '<1%' : `${percent}%`;
+    const piePath = this.getPieSlicePath(18, 18, 16, percent, usage.usedTokens);
     return `
       <div class="status-right">
         <div class="context-usage ${colorClass}" title="${usage.usedTokens.toLocaleString()} / ${usage.totalTokens.toLocaleString()} tokens">
-          <svg class="context-pie" width="14" height="14" viewBox="0 0 36 36">
-            <circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--vscode-widget-border, #444)" stroke-width="3.5"/>
-            <circle cx="18" cy="18" r="15.9" fill="none" stroke="currentColor" stroke-width="3.5"
-              stroke-dasharray="${dashArray}" stroke-dashoffset="25"
-              transform="rotate(-90 18 18)"/>
+          <svg class="context-pie" width="16" height="16" viewBox="0 0 36 36">
+            <circle cx="18" cy="18" r="16" fill="var(--vscode-widget-border, rgba(128,128,128,0.3))"/>
+            ${piePath ? `<path d="${piePath}" fill="currentColor"/>` : ''}
           </svg>
-          <span>${percent}%</span>
+          <span>${label}</span>
         </div>
       </div>
     `;
+  }
+
+  private getPieSlicePath(cx: number, cy: number, r: number, percent: number, usedTokens: number): string {
+    if (usedTokens === 0) return '';
+    if (percent >= 100) {
+      return `M${cx - r},${cy} a${r},${r} 0 1,1 ${r * 2},0 a${r},${r} 0 1,1 -${r * 2},0`;
+    }
+    const clampedPercent = Math.max(percent, 0.5);
+    const angle = (clampedPercent / 100) * 360;
+    const rad = (angle - 90) * Math.PI / 180;
+    const x = cx + r * Math.cos(rad);
+    const y = cy + r * Math.sin(rad);
+    const largeArc = angle > 180 ? 1 : 0;
+    return `M${cx},${cy} L${cx},${cy - r} A${r},${r} 0 ${largeArc},1 ${x.toFixed(2)},${y.toFixed(2)} Z`;
   }
 
   private renderApprovalPanel(): string {

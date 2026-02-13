@@ -427,7 +427,7 @@ export class ConversationStore {
 
   private notifyChange(): void {
     if (!this.suppressNotify) {
-      this.onStateChange(this.state);
+      this.onStateChange(this.getState());
     }
   }
 
