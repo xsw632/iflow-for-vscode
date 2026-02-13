@@ -1,12 +1,12 @@
 import { escapeHtml } from './markdownRenderer';
 import type { OutputBlock } from '../src/protocol';
+import { getFileName, getFileIcon, shortenPath, humanizeToolName } from './fileUtils';
 
 type ToolBlock = Extract<OutputBlock, { type: 'tool' }>;
 
 // ── Constants ─────────────────────────────────────────────────────────
 const MAX_DIFF_LINES = 220;
 const MAX_COMMAND_LINES = 260;
-const PATH_SHORTEN_THRESHOLD = 60;
 const COMMAND_TRUNCATE_LENGTH = 80;
 
 // ── Input helpers ──────────────────────────────────────────────────
@@ -41,44 +41,6 @@ function getInputNumber(input: Record<string, unknown>, keys: string[]): number 
     }
   }
   return null;
-}
-
-// ── Path / name helpers ────────────────────────────────────────────
-
-export function getFileName(path: string): string {
-  return path.split(/[/\\]/).pop() || path;
-}
-
-export function getFileIcon(path: string): string {
-  const lower = path.toLowerCase();
-  if (/\.(png|jpe?g|gif|webp|bmp|svg|ico|tiff?)$/.test(lower)) {
-    return '🖼';
-  }
-  if (/\.(pdf)$/.test(lower)) {
-    return '📕';
-  }
-  if (/\.(doc|docx|ppt|pptx|xls|xlsx)$/.test(lower)) {
-    return '📄';
-  }
-  return '📎';
-}
-
-function shortenPath(p: string): string {
-  if (p.length <= PATH_SHORTEN_THRESHOLD) {
-    return p;
-  }
-  return `...${p.slice(-57)}`;
-}
-
-function humanizeToolName(name: string): string {
-  const normalized = name
-    .replace(/([a-z])([A-Z])/g, '$1 $2')
-    .replace(/[_-]+/g, ' ')
-    .trim();
-  if (!normalized) {
-    return 'Tool';
-  }
-  return normalized[0].toUpperCase() + normalized.slice(1);
 }
 
 // ── Tool classification ────────────────────────────────────────────

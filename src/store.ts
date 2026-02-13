@@ -234,14 +234,26 @@ export class ConversationStore {
     this.notifyChange();
   }
 
+  /** Find the last block of a given type, or null if the last block is a different type. */
+  private findLastBlock<T extends OutputBlock['type']>(
+    blocks: OutputBlock[],
+    type: T
+  ): Extract<OutputBlock, { type: T }> | null {
+    const last = blocks[blocks.length - 1];
+    if (last?.type === type) {
+      return last as Extract<OutputBlock, { type: T }>;
+    }
+    return null;
+  }
+
   private applyChunkToMessage(message: Message, chunk: StreamChunk): void {
     const blocks = message.blocks;
 
     switch (chunk.chunkType) {
       case 'text': {
-        const lastBlock = blocks[blocks.length - 1];
-        if (lastBlock?.type === 'text') {
-          lastBlock.content += chunk.content;
+        const lastText = this.findLastBlock(blocks, 'text');
+        if (lastText) {
+          lastText.content += chunk.content;
         } else {
           blocks.push({ type: 'text', content: chunk.content });
         }
@@ -259,10 +271,8 @@ export class ConversationStore {
         break;
 
       case 'code_content': {
-        const codeBlock = blocks[blocks.length - 1];
-        if (codeBlock?.type === 'code') {
-          codeBlock.content += chunk.content;
-        }
+        const codeBlock = this.findLastBlock(blocks, 'code');
+        if (codeBlock) { codeBlock.content += chunk.content; }
         break;
       }
 
@@ -273,14 +283,13 @@ export class ConversationStore {
       case 'tool_start': {
         // If the last block is a running tool with the same name, update it
         // (SDK sends pending first, then in_progress with actual args/label)
-        const lastToolBlock = blocks[blocks.length - 1];
-        if (lastToolBlock?.type === 'tool' && lastToolBlock.status === 'running' && lastToolBlock.name === chunk.name) {
+        const lastTool = this.findLastBlock(blocks, 'tool');
+        if (lastTool && lastTool.status === 'running' && lastTool.name === chunk.name) {
           if (chunk.input && Object.keys(chunk.input).length > 0) {
-            // Merge new input into existing (preserving earlier args)
-            lastToolBlock.input = { ...lastToolBlock.input, ...chunk.input };
+            lastTool.input = { ...lastTool.input, ...chunk.input };
           }
           if (chunk.label) {
-            lastToolBlock.label = chunk.label;
+            lastTool.label = chunk.label;
           }
         } else {
           blocks.push({
@@ -296,18 +305,14 @@ export class ConversationStore {
       }
 
       case 'tool_output': {
-        const toolBlock = blocks[blocks.length - 1];
-        if (toolBlock?.type === 'tool') {
-          toolBlock.output += chunk.content;
-        }
+        const toolBlock = this.findLastBlock(blocks, 'tool');
+        if (toolBlock) { toolBlock.output += chunk.content; }
         break;
       }
 
       case 'tool_end': {
-        const toolEndBlock = blocks[blocks.length - 1];
-        if (toolEndBlock?.type === 'tool') {
-          toolEndBlock.status = chunk.status;
-        }
+        const toolBlock = this.findLastBlock(blocks, 'tool');
+        if (toolBlock) { toolBlock.status = chunk.status; }
         break;
       }
 
@@ -320,18 +325,14 @@ export class ConversationStore {
         break;
 
       case 'thinking_content': {
-        const thinkingBlock = blocks[blocks.length - 1];
-        if (thinkingBlock?.type === 'thinking') {
-          thinkingBlock.content += chunk.content;
-        }
+        const thinkingBlock = this.findLastBlock(blocks, 'thinking');
+        if (thinkingBlock) { thinkingBlock.content += chunk.content; }
         break;
       }
 
       case 'thinking_end': {
-        const thinkingEndBlock = blocks[blocks.length - 1];
-        if (thinkingEndBlock?.type === 'thinking') {
-          thinkingEndBlock.collapsed = true;
-        }
+        const thinkingBlock = this.findLastBlock(blocks, 'thinking');
+        if (thinkingBlock) { thinkingBlock.collapsed = true; }
         break;
       }
 

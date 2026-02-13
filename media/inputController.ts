@@ -1,6 +1,6 @@
 import type { AttachedFile, WebviewMessage } from '../src/protocol';
 import { escapeHtml } from './markdownRenderer';
-import { getFileName, getFileIcon } from './toolRenderers';
+import { getFileName, getFileIcon } from './fileUtils';
 import { escapeAttr } from './webviewUtils';
 
 export interface InputHost {
