@@ -19,6 +19,21 @@ export interface PendingConfirmation {
   description: string;
 }
 
+export interface PendingQuestion {
+  requestId: number;
+  questions: Array<{
+    question: string;
+    header: string;
+    options: Array<{ label: string; description: string }>;
+    multiSelect: boolean;
+  }>;
+}
+
+export interface PendingPlanApproval {
+  requestId: number;
+  plan: string;
+}
+
 // ── Utility helpers ─────────────────────────────────────────────────
 
 function timeAgo(timestamp: number, now: number): string {
@@ -286,6 +301,9 @@ export function renderBlock(block: OutputBlock): string {
         </div>
       `;
 
+    case 'plan':
+      return renderPlanBlock(block.entries);
+
     case 'warning':
       return `
         <div class="block-warning">
@@ -294,6 +312,48 @@ export function renderBlock(block: OutputBlock): string {
         </div>
       `;
   }
+}
+
+function renderPlanBlock(entries: Array<{ content: string; status: string; priority: string }>): string {
+  const completed = entries.filter(e => e.status === 'completed').length;
+  const total = entries.length;
+
+  const entriesHtml = entries.map(entry => {
+    let icon: string;
+    let statusClass: string;
+    switch (entry.status) {
+      case 'completed':
+        icon = '✓';
+        statusClass = 'completed';
+        break;
+      case 'in_progress':
+        icon = '⏳';
+        statusClass = 'in-progress';
+        break;
+      default:
+        icon = '○';
+        statusClass = 'pending';
+    }
+    return `
+      <div class="plan-entry ${statusClass}">
+        <span class="plan-entry-icon ${statusClass}">${icon}</span>
+        <span class="plan-entry-text">${escapeHtml(entry.content)}</span>
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <div class="block-plan">
+      <div class="plan-header">
+        <span class="plan-icon">📋</span>
+        <span class="plan-title">Execution Plan</span>
+        <span class="plan-progress">${completed}/${total}</span>
+      </div>
+      <div class="plan-entries">
+        ${entriesHtml}
+      </div>
+    </div>
+  `;
 }
 
 export function renderPendingIndicator(faviconUri: string): string {
@@ -311,6 +371,8 @@ export function renderComposer(opts: {
   conversation: Conversation | null;
   isStreaming: boolean;
   pendingConfirmation: PendingConfirmation | null;
+  pendingQuestion: PendingQuestion | null;
+  pendingPlanApproval: PendingPlanApproval | null;
   attachedFilesHtml: string;
   slashMenuHtml: string;
   mentionMenuHtml: string;
@@ -319,6 +381,14 @@ export function renderComposer(opts: {
 }): string {
   if (opts.pendingConfirmation) {
     return renderApprovalPanel(opts.pendingConfirmation);
+  }
+
+  if (opts.pendingQuestion) {
+    return renderQuestionPanel(opts.pendingQuestion);
+  }
+
+  if (opts.pendingPlanApproval) {
+    return renderPlanApprovalPanel(opts.pendingPlanApproval);
   }
 
   const conversation = opts.conversation;
@@ -423,6 +493,78 @@ function renderApprovalPanel(conf: PendingConfirmation): string {
         </div>
       </div>
       <div class="approval-hint">Esc to cancel</div>
+    </div>
+  `;
+}
+
+function renderQuestionPanel(pq: PendingQuestion): string {
+  // Render each question with its options
+  const questionsHtml = pq.questions.map((q, qIdx) => {
+    let keyIndex = 1;
+    const optionsHtml = q.options.map((opt) => {
+      const key = keyIndex++;
+      return `
+        <button class="approval-option question-option" data-question-idx="${qIdx}" data-option-label="${escapeAttr(opt.label)}">
+          <span class="approval-key">${key}</span>
+          <span class="approval-label">${escapeHtml(opt.label)}</span>
+          ${opt.description ? `<span class="option-description">${escapeHtml(opt.description)}</span>` : ''}
+        </button>
+      `;
+    }).join('');
+
+    // "Other" free-text input as last option
+    const otherKey = keyIndex;
+    const otherHtml = `
+      <div class="approval-option feedback-option">
+        <span class="approval-key">${otherKey}</span>
+        <input
+          type="text"
+          class="approval-feedback-input question-other-input"
+          data-question-idx="${qIdx}"
+          placeholder="Other..."
+        />
+      </div>
+    `;
+
+    return `
+      <div class="question-item" data-question-idx="${qIdx}" data-question-header="${escapeAttr(q.header)}">
+        <div class="question-text">${escapeHtml(q.question)}</div>
+        <div class="approval-options">
+          ${optionsHtml}
+          ${otherHtml}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <div class="composer question-panel" data-request-id="${pq.requestId}">
+      ${questionsHtml}
+      <div class="approval-hint">Esc to cancel</div>
+    </div>
+  `;
+}
+
+function renderPlanApprovalPanel(pp: PendingPlanApproval): string {
+  const planContentHtml = pp.plan
+    ? `<div class="plan-content">${renderMarkdown(pp.plan)}</div>`
+    : '';
+
+  return `
+    <div class="composer plan-approval-panel" data-request-id="${pp.requestId}">
+      <div class="plan-approval-question">Approve this plan?</div>
+      ${planContentHtml}
+      <div class="approval-options">
+        <button class="approval-option" data-plan-approval="approve">
+          <span class="approval-key">1</span>
+          <span class="approval-label">Approve</span>
+        </button>
+        <button class="approval-option" data-plan-approval="reject">
+          <span class="approval-key">2</span>
+          <span class="approval-label">Reject</span>
+        </button>
+      </div>
+      <div class="approval-hint">Esc to reject</div>
     </div>
   `;
 }

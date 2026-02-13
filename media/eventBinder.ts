@@ -3,7 +3,7 @@
 
 import type { ConversationMode, ModelType, Conversation, WebviewMessage } from '../src/protocol';
 import { renderConversationPanel } from './appRenderer';
-import type { PendingConfirmation } from './appRenderer';
+import type { PendingConfirmation, PendingQuestion, PendingPlanApproval } from './appRenderer';
 
 /** Interface that IFlowApp implements to supply state and actions to event binders. */
 export interface AppHost {
@@ -22,6 +22,10 @@ export interface AppHost {
   getCurrentConversation(): Conversation | null;
   getPendingConfirmation(): PendingConfirmation | null;
   clearPendingConfirmation(): void;
+  getPendingQuestion(): PendingQuestion | null;
+  clearPendingQuestion(): void;
+  getPendingPlanApproval(): PendingPlanApproval | null;
+  clearPendingPlanApproval(): void;
 
   // DOM helpers
   autoSizeSelect(select: HTMLSelectElement): void;
@@ -128,6 +132,18 @@ export function attachComposerListeners(host: AppHost): void {
     return;
   }
 
+  // If the question panel is showing, attach question-specific listeners
+  if (host.getPendingQuestion()) {
+    attachQuestionListeners(host);
+    return;
+  }
+
+  // If the plan approval panel is showing, attach plan-specific listeners
+  if (host.getPendingPlanApproval()) {
+    attachPlanApprovalListeners(host);
+    return;
+  }
+
   document.getElementById('attach-btn')?.addEventListener('click', () => {
     host.postMessage({ type: 'pickFiles' });
   });
@@ -216,6 +232,147 @@ function attachApprovalListeners(host: AppHost): void {
   // Clean up when approval panel is removed (next render will not re-attach)
   const observer = new MutationObserver(() => {
     if (!document.querySelector('.approval-panel')) {
+      document.removeEventListener('keydown', keyHandler);
+      observer.disconnect();
+    }
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+}
+
+// ── Question panel ───────────────────────────────────────────────
+
+function attachQuestionListeners(host: AppHost): void {
+  const pq = host.getPendingQuestion();
+  if (!pq) return;
+
+  const handleSubmitAnswers = (answers: Record<string, string | string[]>) => {
+    host.postMessage({ type: 'questionAnswer', requestId: pq.requestId, answers });
+    host.clearPendingQuestion();
+    host.render();
+  };
+
+  const handleCancel = () => {
+    // Submit empty answers on cancel
+    const answers: Record<string, string> = {};
+    for (const q of pq.questions) {
+      answers[q.header] = '';
+    }
+    handleSubmitAnswers(answers);
+  };
+
+  // For single-question single-select: clicking an option immediately submits
+  const isSingleQuestionSingleSelect = pq.questions.length === 1 && !pq.questions[0].multiSelect;
+
+  // Click handlers for option buttons
+  document.querySelectorAll('.question-option').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const el = btn as HTMLElement;
+      const qIdx = parseInt(el.dataset.questionIdx || '0', 10);
+      const optionLabel = el.dataset.optionLabel || '';
+
+      if (isSingleQuestionSingleSelect) {
+        const answers: Record<string, string> = {};
+        answers[pq.questions[qIdx].header] = optionLabel;
+        handleSubmitAnswers(answers);
+      } else {
+        // Toggle selection state for multi-question or multi-select
+        el.classList.toggle('selected');
+      }
+    });
+  });
+
+  // "Other" input: Enter to submit
+  document.querySelectorAll('.question-other-input').forEach(input => {
+    (input as HTMLInputElement).addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const el = input as HTMLInputElement;
+        const qIdx = parseInt(el.dataset.questionIdx || '0', 10);
+        const value = el.value.trim();
+        if (!value) return;
+
+        if (isSingleQuestionSingleSelect) {
+          const answers: Record<string, string> = {};
+          answers[pq.questions[qIdx].header] = value;
+          handleSubmitAnswers(answers);
+        }
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        handleCancel();
+      }
+    });
+  });
+
+  // Global keyboard shortcuts
+  const otherInput = document.querySelector('.question-other-input') as HTMLInputElement | null;
+  const keyHandler = (e: KeyboardEvent) => {
+    if (document.activeElement && (document.activeElement as HTMLElement).classList?.contains('question-other-input')) return;
+
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      handleCancel();
+      return;
+    }
+
+    // Number keys to select options (only for single-question single-select)
+    if (isSingleQuestionSingleSelect) {
+      const q = pq.questions[0];
+      const num = parseInt(e.key, 10);
+      if (num >= 1 && num <= q.options.length) {
+        e.preventDefault();
+        const answers: Record<string, string> = {};
+        answers[q.header] = q.options[num - 1].label;
+        handleSubmitAnswers(answers);
+      } else if (num === q.options.length + 1) {
+        // Focus the "Other" input
+        e.preventDefault();
+        otherInput?.focus();
+      }
+    }
+  };
+  document.addEventListener('keydown', keyHandler);
+
+  // Clean up when panel is removed
+  const observer = new MutationObserver(() => {
+    if (!document.querySelector('.question-panel')) {
+      document.removeEventListener('keydown', keyHandler);
+      observer.disconnect();
+    }
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+}
+
+// ── Plan approval panel ──────────────────────────────────────────
+
+function attachPlanApprovalListeners(host: AppHost): void {
+  const pp = host.getPendingPlanApproval();
+  if (!pp) return;
+
+  const handleApproval = (approved: boolean) => {
+    host.postMessage({ type: 'planApproval', requestId: pp.requestId, approved });
+    host.clearPendingPlanApproval();
+    host.render();
+  };
+
+  // Click handlers
+  document.querySelectorAll('[data-plan-approval]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const approval = (btn as HTMLElement).dataset.planApproval;
+      handleApproval(approval === 'approve');
+    });
+  });
+
+  // Global keyboard shortcuts
+  const keyHandler = (e: KeyboardEvent) => {
+    if (e.key === '1') { e.preventDefault(); handleApproval(true); }
+    else if (e.key === '2') { e.preventDefault(); handleApproval(false); }
+    else if (e.key === 'Escape') { e.preventDefault(); handleApproval(false); }
+  };
+  document.addEventListener('keydown', keyHandler);
+
+  // Clean up when panel is removed
+  const observer = new MutationObserver(() => {
+    if (!document.querySelector('.plan-approval-panel')) {
       document.removeEventListener('keydown', keyHandler);
       observer.disconnect();
     }

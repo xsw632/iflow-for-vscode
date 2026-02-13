@@ -743,6 +743,83 @@ body {
   100% { opacity: 0.4; }
 }
 
+/* Execution Plan Block */
+.block-plan {
+  margin: var(--spacing-sm) 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.plan-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: 8px var(--spacing-md);
+  background-color: var(--vscode-editor-lineHighlightBackground);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.plan-icon {
+  font-size: 14px;
+}
+
+.plan-title {
+  flex: 1;
+  color: var(--text-primary);
+}
+
+.plan-progress {
+  color: var(--text-secondary);
+  font-weight: 400;
+  font-size: 11px;
+}
+
+.plan-entries {
+  padding: var(--spacing-xs) 0;
+}
+
+.plan-entry {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  padding: 4px var(--spacing-md);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.plan-entry-icon {
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+  font-size: 12px;
+}
+
+.plan-entry-icon.completed {
+  color: var(--vscode-terminal-ansiGreen, #4ec9b0);
+}
+
+.plan-entry-icon.in-progress {
+  color: var(--vscode-terminal-ansiYellow, #dcdcaa);
+  animation: pulse-hourglass 1.5s ease-in-out infinite;
+}
+
+.plan-entry-icon.pending {
+  color: var(--text-secondary);
+}
+
+.plan-entry-text {
+  color: var(--text-primary);
+}
+
+.plan-entry.completed .plan-entry-text {
+  color: var(--text-secondary);
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
 /* Composer - Floating Design */
 .composer {
   position: absolute;
@@ -1397,4 +1474,62 @@ select option {
   font-size: 11px;
   color: var(--text-secondary);
   padding-left: 2px;
+}
+
+/* ── Question panel ─────────────────────────────────────────── */
+
+.question-panel {
+  flex-direction: column;
+  gap: 8px;
+}
+
+.question-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.question-text {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--vscode-foreground);
+  padding: 0 2px;
+}
+
+.question-option .option-description {
+  display: block;
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  font-weight: normal;
+}
+
+.question-option.selected {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+
+/* ── Plan approval panel ────────────────────────────────────── */
+
+.plan-approval-panel {
+  flex-direction: column;
+  gap: 8px;
+}
+
+.plan-approval-question {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--vscode-foreground);
+  padding: 0 2px;
+}
+
+.plan-content {
+  max-height: 200px;
+  overflow-y: auto;
+  font-size: 12px;
+  padding: 8px;
+  background: var(--vscode-editor-background);
+  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.3));
+  border-radius: 4px;
+  color: var(--vscode-foreground);
 }

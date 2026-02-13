@@ -41,10 +41,13 @@ export type StreamChunk =
   | { chunkType: 'tool_output'; content: string }
   | { chunkType: 'tool_end'; status: 'completed' | 'error' }
   | { chunkType: 'tool_confirmation'; requestId: number; toolName: string; description: string; confirmationType: string }
+  | { chunkType: 'user_question'; requestId: number; questions: Array<{ question: string; header: string; options: Array<{ label: string; description: string }>; multiSelect: boolean }> }
+  | { chunkType: 'plan_approval'; requestId: number; plan: string }
   | { chunkType: 'thinking_start' }
   | { chunkType: 'thinking_content'; content: string }
   | { chunkType: 'thinking_end' }
   | { chunkType: 'file_ref'; path: string; lineStart?: number; lineEnd?: number }
+  | { chunkType: 'plan'; entries: Array<{ content: string; status: string; priority: string }> }
   | { chunkType: 'error'; message: string }
   | { chunkType: 'warning'; message: string };
 
@@ -55,6 +58,7 @@ export type OutputBlock =
   | { type: 'tool'; name: string; input: Record<string, unknown>; output: string; status: 'running' | 'completed' | 'error'; label?: string }
   | { type: 'thinking'; content: string; collapsed: boolean }
   | { type: 'file_ref'; path: string; lineStart?: number; lineEnd?: number }
+  | { type: 'plan'; entries: Array<{ content: string; status: string; priority: string }> }
   | { type: 'error'; message: string }
   | { type: 'warning'; message: string };
 
@@ -114,6 +118,8 @@ export type WebviewMessage =
   | { type: 'setModel'; model: ModelType }
   | { type: 'sendMessage'; content: string; attachedFiles: AttachedFile[] }
   | { type: 'toolApproval'; requestId: number; outcome: 'allow' | 'alwaysAllow' | 'reject' }
+  | { type: 'questionAnswer'; requestId: number; answers: Record<string, string | string[]> }
+  | { type: 'planApproval'; requestId: number; approved: boolean }
   | { type: 'cancelCurrent' }
   | { type: 'recheckCli' }
   | { type: 'ready' };

@@ -350,6 +350,18 @@ export class ConversationStore {
         // No block added — the tool_start chunk already added a running tool block.
         break;
 
+      case 'plan': {
+        // Plan updates are full snapshots — replace any existing plan block
+        const existingPlanIdx = blocks.findIndex(b => b.type === 'plan');
+        const planBlock: OutputBlock = { type: 'plan', entries: chunk.entries };
+        if (existingPlanIdx !== -1) {
+          blocks[existingPlanIdx] = planBlock;
+        } else {
+          blocks.push(planBlock);
+        }
+        break;
+      }
+
       case 'error':
         blocks.push({ type: 'error', message: chunk.message });
         break;

@@ -147,6 +147,26 @@ export class ChunkMapper {
           break;
         }
 
+        // Check if this is a user question request (injected by patchQuestions)
+        if (message._questionRequest && message._requestId !== undefined) {
+          chunks.push({
+            chunkType: 'user_question',
+            requestId: message._requestId,
+            questions: message._questions,
+          });
+          break;
+        }
+
+        // Check if this is a plan approval request (injected by patchQuestions)
+        if (message._planApproval && message._requestId !== undefined) {
+          chunks.push({
+            chunkType: 'plan_approval',
+            requestId: message._requestId,
+            plan: message._plan,
+          });
+          break;
+        }
+
         const enrichedInput = this.enrichToolInput(message);
         const toolName = message.toolName || message.label || 'unknown';
 
@@ -195,12 +215,14 @@ export class ChunkMapper {
 
       case sdk.MessageType.PLAN:
         if (message.entries && Array.isArray(message.entries)) {
-          let planText = 'Execution Plan:\n';
-          for (const entry of message.entries) {
-            const statusIcon = entry.status === 'completed' ? '✅' : '⏳';
-            planText += `${statusIcon} [${entry.priority}] ${entry.content}\n`;
-          }
-          chunks.push({ chunkType: 'text', content: planText });
+          chunks.push({
+            chunkType: 'plan',
+            entries: message.entries.map((entry: { content?: string; status?: string; priority?: string }) => ({
+              content: entry.content || '',
+              status: entry.status || 'pending',
+              priority: entry.priority || 'medium',
+            })),
+          });
         }
         break;
 

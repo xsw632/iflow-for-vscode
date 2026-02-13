@@ -19,7 +19,7 @@ import {
   renderBlock,
   renderPendingIndicator,
 } from './appRenderer';
-import type { PendingConfirmation } from './appRenderer';
+import type { PendingConfirmation, PendingQuestion, PendingPlanApproval } from './appRenderer';
 import {
   attachTopBarListeners,
   attachModeListeners,
@@ -47,6 +47,8 @@ class IFlowApp implements AppHost {
 
   private composerResizeObserver: ResizeObserver | null = null;
   private pendingConfirmation: PendingConfirmation | null = null;
+  private pendingQuestion: PendingQuestion | null = null;
+  private pendingPlanApproval: PendingPlanApproval | null = null;
   private clearInputOnNextRender = false;
 
   // AppHost public state (accessed by event binders)
@@ -105,6 +107,22 @@ class IFlowApp implements AppHost {
 
   clearPendingConfirmation(): void {
     this.pendingConfirmation = null;
+  }
+
+  getPendingQuestion(): PendingQuestion | null {
+    return this.pendingQuestion;
+  }
+
+  clearPendingQuestion(): void {
+    this.pendingQuestion = null;
+  }
+
+  getPendingPlanApproval(): PendingPlanApproval | null {
+    return this.pendingPlanApproval;
+  }
+
+  clearPendingPlanApproval(): void {
+    this.pendingPlanApproval = null;
   }
 
   autoSizeSelect(select: HTMLSelectElement): void {
@@ -240,6 +258,18 @@ class IFlowApp implements AppHost {
             description: message.chunk.description,
           };
           this.render();
+        } else if (message.chunk.chunkType === 'user_question') {
+          this.pendingQuestion = {
+            requestId: message.chunk.requestId,
+            questions: message.chunk.questions,
+          };
+          this.render();
+        } else if (message.chunk.chunkType === 'plan_approval') {
+          this.pendingPlanApproval = {
+            requestId: message.chunk.requestId,
+            plan: message.chunk.plan,
+          };
+          this.render();
         }
         break;
 
@@ -247,8 +277,10 @@ class IFlowApp implements AppHost {
       case 'streamError':
         // No render() needed here — the stateUpdated with isStreaming=false
         // already triggers a full render.
-        // Clear any pending confirmation when the stream ends.
+        // Clear any pending states when the stream ends.
         this.pendingConfirmation = null;
+        this.pendingQuestion = null;
+        this.pendingPlanApproval = null;
         break;
     }
   }
@@ -287,6 +319,8 @@ class IFlowApp implements AppHost {
           conversation,
           isStreaming: this.state?.isStreaming ?? false,
           pendingConfirmation: this.pendingConfirmation,
+          pendingQuestion: this.pendingQuestion,
+          pendingPlanApproval: this.pendingPlanApproval,
           attachedFilesHtml: this.inputCtrl.renderAttachedFilesHtml(),
           slashMenuHtml: this.slashMenu.isVisible ? this.slashMenu.renderHtml() : '',
           mentionMenuHtml: this.inputCtrl.isMentionVisible ? this.inputCtrl.renderMentionMenuHtml() : '',

@@ -6,6 +6,49 @@ import { StreamChunk, ConversationMode, ModelType, AttachedFile } from './protoc
 import { ChunkMapper } from './chunkMapper';
 import { ProcessManager, ManualStartInfo } from './processManager';
 
+/**
+ * Plan mode workflow instructions that the CLI normally injects via a
+ * PLAN_MODE_ACTIVATED system-reminder into every user message.  The ACP path
+ * never emits this event, so we compensate by appending it to the system prompt.
+ */
+const PLAN_MODE_INSTRUCTIONS = `
+Plan mode is active. The user indicated that they do not want you to execute yet -- you MUST NOT make any edits, run any non-readonly tools (including changing configs or making commits), or otherwise make any changes to the system. This supercedes any other instructions you have received.
+
+## Enhanced Planning Workflow
+
+### Phase 1: Initial Understanding
+Goal: Gain a comprehensive understanding of the user's request by reading through code and asking them questions.
+
+1. Focus on understanding the user's request and the code associated with their request
+2. Use read-only tools (read_file, glob, list_directory, search_file_content) to explore the codebase
+3. If you need clarification, ask the user directly in your text response
+
+### Phase 2: Planning
+Goal: Come up with an approach to solve the problem identified in phase 1.
+- Provide any background context that may help with the task
+- Create a detailed plan using todo_write
+
+### Phase 3: Review
+Goal: Review the plan(s) from Phase 2 and ensure alignment with the user's intentions.
+1. Read the critical files to deepen your understanding
+2. Ensure that the plans align with the user's original request
+3. Ask the user any remaining questions directly in your text response
+
+### Phase 4: Final Plan
+Once you have all the information you need, provide your synthesized recommendation including:
+- Recommended approach with rationale
+- Key insights from different perspectives
+
+### Phase 5: Call exit_plan_mode
+CRITICAL: At the very end of your turn, once you are happy with your final plan, you MUST call the exit_plan_mode tool. This is mandatory.
+Your turn should ONLY end by calling exit_plan_mode. Do NOT end your turn with just text - always call exit_plan_mode as the final action.
+
+NOTE:
+- At any point in time through this workflow you should feel free to ask the user questions or clarifications in your text response. Don't make large assumptions about user intent.
+- The goal is to present a well researched plan to the user, and tie any loose ends before implementation begins.
+- IMPORTANT: You MUST call exit_plan_mode when your plan is ready. Never end your turn without calling this tool.
+`.trim();
+
 // SDK types (loaded dynamically)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SDKModule = any;
@@ -193,17 +236,28 @@ export class IFlowClient {
         await this.processManager.startManagedProcess(manualStart.nodePath, manualStart.port, manualStart.iflowScript);
       }
 
+      const sessionSettings: Record<string, unknown> = {
+        permission_mode: options.mode,
+      };
+
+      // In the ACP path the server never emits the PLAN_MODE_ACTIVATED reminder
+      // that the CLI injects into every user message.  Compensate by appending the
+      // critical plan-mode workflow instructions via append_system_prompt so the AI
+      // reliably calls exit_plan_mode instead of ending the turn early.
+      if (options.mode === 'plan') {
+        sessionSettings.append_system_prompt = PLAN_MODE_INSTRUCTIONS;
+      }
+
       const sdkOptions: Record<string, unknown> = {
         ...this.getSDKOptions(manualStart),
-        sessionSettings: {
-          permission_mode: options.mode,
-        },
+        sessionSettings,
       };
 
       const sdk = await getSDK();
       this.client = new sdk.IFlowClient(sdkOptions);
       await this.client.connect();
       this.patchTransport(this.client);
+      this.patchQuestions(this.client);
       if (options.mode === 'default') {
         this.patchPermission(this.client);
       }
@@ -229,8 +283,17 @@ export class IFlowClient {
       }
 
       const prompt = this.chunkMapper.buildPrompt(options);
-      this.log(`Sending message: ${prompt.substring(0, 100)}...`);
-      await this.client.sendMessage(prompt);
+
+      // In plan mode, inject the plan-mode workflow as a <system-reminder> into
+      // the user message itself — mirroring what the CLI does on every turn via
+      // reminderManager.injectIntoUserMessage().  The ACP path skips that
+      // injection, so we compensate here.
+      const finalPrompt = options.mode === 'plan'
+        ? `<system-reminder>\n${PLAN_MODE_INSTRUCTIONS}\n</system-reminder>\n\n${prompt}`
+        : prompt;
+
+      this.log(`Sending message: ${finalPrompt.substring(0, 100)}...`);
+      await this.client.sendMessage(finalPrompt);
 
       for await (const message of this.client.receiveMessages()) {
         if (this.isCancelled) {
@@ -375,6 +438,141 @@ export class IFlowClient {
     };
 
     this.log('patchTransport: WebSocket message buffering installed');
+  }
+
+  /**
+   * Monkey-patch SDK protocol to intercept _iflow/user/questions and _iflow/plan/exit
+   * JSON-RPC methods. Without this patch, the SDK's handleUnknownMessage() returns
+   * a -32601 error which causes the server to disconnect.
+   */
+  private patchQuestions(client: SDKClientType): void {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const protocol = (client as any).protocol;
+    if (!protocol) {
+      this.log('patchQuestions: protocol not available, skipping');
+      return;
+    }
+
+    const self = this;
+    const sendResult = protocol.sendResult.bind(protocol);
+    const originalHandleClientMessage = protocol.handleClientMessage.bind(protocol);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const messageQueue: any[] = (client as any).messageQueue;
+
+    self.log(`patchQuestions: messageQueue exists=${!!messageQueue}, protocol.handleClientMessage exists=${typeof protocol.handleClientMessage}`);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    protocol.handleClientMessage = async function (message: any) {
+      const { id, method, params } = message;
+
+      // Log ALL incoming methods for debugging
+      self.log(`patchQuestions: handleClientMessage method=${method}, id=${id}`);
+
+      try {
+        if (method === '_iflow/user/questions') {
+          const questions = params?.questions || [];
+          self.log(`patchQuestions: intercepted _iflow/user/questions id=${id}, questions=${JSON.stringify(questions).substring(0, 200)}`);
+
+          // Push a marker message into messageQueue for the run() loop to forward to webview
+          messageQueue.push({
+            type: 'tool_call',
+            id: String(id),
+            label: 'Ask Question',
+            icon: { type: 'emoji', value: '?' },
+            status: 'pending',
+            toolName: 'ask_user_question',
+            _questionRequest: true,
+            _requestId: id,
+            _questions: questions,
+          });
+
+          // Block until user responds
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const response = await new Promise<any>((resolve) => {
+            self.pendingPermissions.set(id, resolve);
+          });
+
+          // Send user's answers back to server
+          if (id !== undefined) {
+            await sendResult(id, response);
+          }
+
+          self.log(`patchQuestions: responded to questions id=${id}`);
+          return { type: 'unknown', method, params };
+        }
+
+        if (method === '_iflow/plan/exit') {
+          const plan = params?.plan || '';
+          self.log(`patchQuestions: intercepted _iflow/plan/exit id=${id}, plan length=${plan.length}`);
+
+          // Push a marker message into messageQueue
+          messageQueue.push({
+            type: 'tool_call',
+            id: String(id),
+            label: 'Exit Plan Mode',
+            icon: { type: 'emoji', value: 'P' },
+            status: 'pending',
+            toolName: 'exit_plan_mode',
+            _planApproval: true,
+            _requestId: id,
+            _plan: plan,
+          });
+
+          // Block until user responds
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const response = await new Promise<any>((resolve) => {
+            self.pendingPermissions.set(id, resolve);
+          });
+
+          // Send approval result back to server
+          if (id !== undefined) {
+            await sendResult(id, response);
+          }
+
+          self.log(`patchQuestions: responded to plan approval id=${id}, approved=${response.approved}`);
+          return { type: 'unknown', method, params };
+        }
+      } catch (err) {
+        self.log(`patchQuestions: ERROR in handler for method=${method}: ${err instanceof Error ? err.message : String(err)}`);
+        // Re-throw so the SDK can handle it
+        throw err;
+      }
+
+      // All other methods: delegate to original handler
+      return await originalHandleClientMessage(message);
+    };
+
+    this.log('patchQuestions: Question/plan interception installed');
+  }
+
+  /**
+   * Answer pending user questions from _iflow/user/questions.
+   */
+  async answerQuestions(requestId: number, answers: Record<string, string | string[]>): Promise<void> {
+    const resolve = this.pendingPermissions.get(requestId);
+    if (!resolve) {
+      this.log(`answerQuestions: no pending request for id ${requestId}`);
+      return;
+    }
+
+    resolve({ answers });
+    this.pendingPermissions.delete(requestId);
+    this.log(`answerQuestions: responded id=${requestId}`);
+  }
+
+  /**
+   * Approve or reject a pending plan from _iflow/plan/exit.
+   */
+  async approvePlan(requestId: number, approved: boolean): Promise<void> {
+    const resolve = this.pendingPermissions.get(requestId);
+    if (!resolve) {
+      this.log(`approvePlan: no pending request for id ${requestId}`);
+      return;
+    }
+
+    resolve({ approved });
+    this.pendingPermissions.delete(requestId);
+    this.log(`approvePlan: responded id=${requestId}, approved=${approved}`);
   }
 
   /**

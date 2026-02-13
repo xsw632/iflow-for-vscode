@@ -149,6 +149,23 @@ export class WebviewHandler {
         }
         break;
 
+      case 'questionAnswer':
+        await this.client.answerQuestions(message.requestId, message.answers);
+        break;
+
+      case 'planApproval':
+        if (message.requestId === -1) {
+          // Synthetic approval: AI ended without calling exit_plan_mode.
+          // Approve → switch to default mode for implementation.
+          // Reject → stay in plan mode so user can refine.
+          if (message.approved) {
+            this.store.setMode('default');
+          }
+        } else {
+          await this.client.approvePlan(message.requestId, message.approved);
+        }
+        break;
+
       case 'cancelCurrent':
         await this.client.cancel();
         this.store.setStreaming(false);
@@ -326,6 +343,9 @@ export class WebviewHandler {
 
     const workspaceFiles = await this.getWorkspaceFileList();
 
+    // Track whether the AI called exit_plan_mode during this run
+    let planApprovalEmitted = false;
+
     await this.client.run(
       {
         prompt: content,
@@ -337,6 +357,9 @@ export class WebviewHandler {
         sessionId: conversation.sessionId
       },
       (chunk) => {
+        if (chunk.chunkType === 'plan_approval') {
+          planApprovalEmitted = true;
+        }
         this.store.appendToAssistantMessage(chunk);
         this.postMessage({ type: 'streamChunk', chunk });
       },
@@ -347,6 +370,19 @@ export class WebviewHandler {
           this.store.setStreaming(false);
         });
         this.postMessage({ type: 'streamEnd' });
+
+        // In plan mode, if the AI ended its turn without calling exit_plan_mode,
+        // show a synthetic plan approval UI so the user can approve/reject.
+        if (conversation.mode === 'plan' && !planApprovalEmitted) {
+          this.postMessage({
+            type: 'streamChunk',
+            chunk: {
+              chunkType: 'plan_approval',
+              requestId: -1,
+              plan: '',
+            }
+          });
+        }
       },
       (error) => {
         // Mark CLI as unavailable on connection errors so next send retries check
