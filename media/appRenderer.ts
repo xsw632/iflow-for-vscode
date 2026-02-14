@@ -315,39 +315,50 @@ export function renderBlock(block: OutputBlock): string {
 }
 
 function renderPlanBlock(entries: Array<{ content: string; status: string; priority: string }>): string {
+  const pending = entries.filter(e => e.status === 'pending').length;
+  const inProgress = entries.filter(e => e.status === 'in_progress').length;
   const completed = entries.filter(e => e.status === 'completed').length;
-  const total = entries.length;
+  const allDone = completed === entries.length && entries.length > 0;
+
+  // Build summary like CLI: "Updated todo list (3 pending, 1 in progress, 0 completed)"
+  const summaryParts: string[] = [];
+  if (pending > 0) summaryParts.push(`${pending} pending`);
+  if (inProgress > 0) summaryParts.push(`${inProgress} in progress`);
+  if (completed > 0) summaryParts.push(`${completed} completed`);
+  const summary = summaryParts.length > 0 ? summaryParts.join(', ') : 'empty';
+
+  const statusIcon = allDone ? '✓' : '⏳';
+  const statusClass = allDone ? 'completed' : 'running';
 
   const entriesHtml = entries.map(entry => {
     let icon: string;
-    let statusClass: string;
+    let entryStatusClass: string;
     switch (entry.status) {
       case 'completed':
         icon = '✓';
-        statusClass = 'completed';
+        entryStatusClass = 'completed';
         break;
       case 'in_progress':
         icon = '⏳';
-        statusClass = 'in-progress';
+        entryStatusClass = 'in-progress';
         break;
       default:
-        icon = '○';
-        statusClass = 'pending';
+        icon = '☐';
+        entryStatusClass = 'pending';
     }
     return `
-      <div class="plan-entry ${statusClass}">
-        <span class="plan-entry-icon ${statusClass}">${icon}</span>
+      <div class="plan-entry ${entryStatusClass}">
+        <span class="plan-entry-icon ${entryStatusClass}">${icon}</span>
         <span class="plan-entry-text">${escapeHtml(entry.content)}</span>
       </div>
     `;
   }).join('');
 
   return `
-    <div class="block-plan">
-      <div class="plan-header">
-        <span class="plan-icon">📋</span>
-        <span class="plan-title">Execution Plan</span>
-        <span class="plan-progress">${completed}/${total}</span>
+    <div class="tool-entry">
+      <div class="block-tool ${statusClass}">
+        <span class="tool-icon ${statusClass}">${statusIcon}</span>
+        <span class="tool-headline">Plan · ${escapeHtml(summary)}</span>
       </div>
       <div class="plan-entries">
         ${entriesHtml}

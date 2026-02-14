@@ -257,7 +257,9 @@ export class IFlowClient {
       this.client = new sdk.IFlowClient(sdkOptions);
       await this.client.connect();
       this.patchTransport(this.client);
-      this.patchQuestions(this.client);
+      if (options.mode === 'plan') {
+        this.patchQuestions(this.client);
+      }
       if (options.mode === 'default') {
         this.patchPermission(this.client);
       }

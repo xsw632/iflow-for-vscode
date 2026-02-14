@@ -743,41 +743,9 @@ body {
   100% { opacity: 0.4; }
 }
 
-/* Execution Plan Block */
-.block-plan {
-  margin: var(--spacing-sm) 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-}
-
-.plan-header {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  padding: 8px var(--spacing-md);
-  background-color: var(--vscode-editor-lineHighlightBackground);
-  border-bottom: 1px solid var(--border);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.plan-icon {
-  font-size: 14px;
-}
-
-.plan-title {
-  flex: 1;
-  color: var(--text-primary);
-}
-
-.plan-progress {
-  color: var(--text-secondary);
-  font-weight: 400;
-  font-size: 11px;
-}
-
-.plan-entries {
+/* Execution Plan Block — rendered inside .tool-entry */
+.tool-entry > .plan-entries {
+  margin: 2px 0 0 26px;
   padding: var(--spacing-xs) 0;
 }
 
@@ -785,7 +753,7 @@ body {
   display: flex;
   align-items: flex-start;
   gap: var(--spacing-sm);
-  padding: 4px var(--spacing-md);
+  padding: 3px 0;
   font-size: 12px;
   line-height: 1.5;
 }
