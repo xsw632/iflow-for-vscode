@@ -627,7 +627,7 @@ body {
 }
 
 .command-output-scroll {
-  height: 220px;
+  max-height: 260px;
   overflow: auto;
   font-family: var(--vscode-editor-font-family, 'Fira Code', monospace);
   font-size: 12px;
@@ -688,7 +688,7 @@ body {
 }
 
 .read-file-scroll {
-  height: 220px;
+  max-height: 260px;
   overflow: auto;
   font-family: var(--vscode-editor-font-family, 'Fira Code', monospace);
   font-size: 12px;
