@@ -437,7 +437,7 @@ export function attachFileOpenListeners(postMessage: (msg: WebviewMessage) => vo
 
 // ── Conversation panel listeners ────────────────────────────────────
 
-export function attachConversationPanelListeners(host: AppHost): void {
+function attachConversationPanelListeners(host: AppHost): void {
   // Click on conversation items
   document.querySelectorAll('.conversation-item').forEach(item => {
     item.addEventListener('click', (e) => {

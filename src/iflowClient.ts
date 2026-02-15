@@ -70,7 +70,7 @@ export function __setSDKModuleForTests(mod: SDKModule | null): void {
   sdkModule = mod;
 }
 
-export interface RunOptions {
+interface RunOptions {
   prompt: string;
   attachedFiles: AttachedFile[];
   mode: ConversationMode;
@@ -259,16 +259,17 @@ export class IFlowClient {
     this.logInfo('=== Checking iFlow CLI availability ===');
     this.logInfo(`Platform: ${process.platform}, arch: ${process.arch}`);
 
+    // Declare outside try so they're accessible in catch
+    let iflowScriptPath: string | undefined;
+    let config: ReturnType<typeof this.getConfig> | undefined;
+
     try {
-      const config = this.getConfig();
+      config = this.getConfig();
 
       // Update API configuration in CLI settings before starting
       this.updateIFlowCliApiConfig();
 
       const manualStart = await this.processManager.resolveStartMode(config);
-
-      // Store script path for error messages
-      let iflowScriptPath: string | undefined;
 
       if (manualStart) {
         diag.push(`nodePath: ${manualStart.nodePath}`);
@@ -299,7 +300,7 @@ export class IFlowClient {
         suggestions.push('建议排查步骤：');
         suggestions.push('1. 检查端口是否被占用: netstat -ano | findstr 8090');
         // Use the actual script path if available, otherwise show generic message
-        if (iflowScriptPath) {
+        if (iflowScriptPath && config) {
           suggestions.push(`2. 手动启动 CLI 查看输出: node "${iflowScriptPath}" --experimental-acp --port ${config.port}`);
         } else {
           suggestions.push('2. 手动启动 CLI 查看输出: node <iflow-cli-path> --experimental-acp --port 8090');

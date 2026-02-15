@@ -3,7 +3,7 @@ import { escapeHtml } from './markdownRenderer';
 import { getFileName, getFileIcon } from './fileUtils';
 import { escapeAttr } from './webviewUtils';
 
-export interface InputHost {
+interface InputHost {
   postMessage(msg: WebviewMessage): void;
   getInputElement(): HTMLTextAreaElement | null;
   onAttachedFilesChanged(): void;

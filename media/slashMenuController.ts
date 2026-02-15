@@ -12,7 +12,7 @@ const SLASH_COMMANDS = [
   { command: '/help', description: 'Show help' }
 ];
 
-export interface SlashMenuHost {
+interface SlashMenuHost {
   postMessage(msg: WebviewMessage): void;
   getCurrentConversation(): Conversation | null;
   getInputElement(): HTMLTextAreaElement | null;

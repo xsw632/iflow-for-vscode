@@ -1,7 +1,7 @@
 // Process lifecycle management for the iFlow CLI subprocess.
 
 import * as cp from 'child_process';
-import * as WebSocket from 'ws';
+import WebSocket = require('ws');
 import { findIFlowPathCrossPlatform, resolveIFlowScriptCrossPlatform, deriveNodePathFromIFlow } from './cliDiscovery';
 
 // ── Process lifecycle constants ──────────────────────────────────────
@@ -15,7 +15,7 @@ export interface ManualStartInfo {
   port: number;
 }
 
-export interface ProcessManagerConfig {
+interface ProcessManagerConfig {
   nodePath: string | null;
   port: number;
 }
@@ -247,7 +247,7 @@ export class ProcessManager {
                 }
               });
 
-              ws.on('error', (err) => {
+              ws.on('error', (err: Error) => {
                 if (!isResolved) {
                   isResolved = true;
                   cleanup();

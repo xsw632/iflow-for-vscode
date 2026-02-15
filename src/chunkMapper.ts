@@ -6,7 +6,7 @@ import { ThinkingParser } from './thinkingParser';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SDKModule = any;
 
-export interface RunOptionsLike {
+interface RunOptionsLike {
   prompt: string;
   attachedFiles: AttachedFile[];
   workspaceFiles?: string[];
