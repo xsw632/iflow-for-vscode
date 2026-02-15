@@ -1501,3 +1501,12 @@ select option {
   border-radius: 4px;
   color: var(--vscode-foreground);
 }
+
+.plan-feedback-option {
+  cursor: default;
+}
+
+.plan-feedback-input {
+  flex: 1;
+  min-width: 0;
+}

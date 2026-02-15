@@ -53,10 +53,13 @@ function looksLikePatch(text: string): boolean {
     text.includes('@@ ');
 }
 
-function getToolKind(block: ToolBlock): 'read' | 'write' | 'edit' | 'search' | 'command' | 'unknown' {
+function getToolKind(block: ToolBlock): 'read' | 'write' | 'edit' | 'search' | 'command' | 'todo' | 'unknown' {
   const name = (block.name || '').toLowerCase();
   const input = block.input || {};
 
+  if (name === 'todo_write') {
+    return 'todo';
+  }
   if (getInputString(input, ['command', 'cmd', 'script'])) {
     return 'command';
   }
@@ -98,9 +101,25 @@ export function getToolHeadline(block: ToolBlock): string {
   const input = block.input || {};
   const toolKind = getToolKind(block);
 
+  // For todo_write, show plan summary
+  if (toolKind === 'todo') {
+    const todos = input.todos as Array<{ task?: string; content?: string; status?: string }> | undefined;
+    if (Array.isArray(todos) && todos.length > 0) {
+      const pending = todos.filter(t => (t.status || 'pending') === 'pending').length;
+      const inProgress = todos.filter(t => t.status === 'in_progress').length;
+      const completed = todos.filter(t => t.status === 'completed').length;
+      const parts: string[] = [];
+      if (pending > 0) parts.push(`${pending} pending`);
+      if (inProgress > 0) parts.push(`${inProgress} in progress`);
+      if (completed > 0) parts.push(`${completed} completed`);
+      return `Plan · ${parts.join(', ') || 'empty'}`;
+    }
+    return 'Plan';
+  }
+
   // For file operations, prioritize showing the file path over generic label
   if (toolKind === 'read' || toolName.includes('read')) {
-    const path = getInputString(input, ['file_path', 'path', 'filePath', 'file']);
+    const path = getInputString(input, ['file_path', 'path', 'filePath', 'file', 'absolute_path']);
     if (path) {
       const lineRange = getToolLineRange(input);
       return `Read ${getFileName(path)}${lineRange}`;
@@ -108,14 +127,14 @@ export function getToolHeadline(block: ToolBlock): string {
   }
 
   if (toolKind === 'write') {
-    const path = getInputString(input, ['file_path', 'path', 'filePath', 'file']);
+    const path = getInputString(input, ['file_path', 'path', 'filePath', 'file', 'absolute_path']);
     if (path) {
       return `Write ${getFileName(path)}`;
     }
   }
 
   if (toolKind === 'edit') {
-    const path = getInputString(input, ['file_path', 'path', 'filePath', 'file']);
+    const path = getInputString(input, ['file_path', 'path', 'filePath', 'file', 'absolute_path']);
     if (path) {
       return `Edit ${getFileName(path)}`;
     }
@@ -162,7 +181,7 @@ export function getToolHeadline(block: ToolBlock): string {
     return `Run ${command.length > COMMAND_TRUNCATE_LENGTH ? `${command.slice(0, COMMAND_TRUNCATE_LENGTH - 3)}...` : command}`;
   }
 
-  const path = getInputString(input, ['file_path', 'path', 'filePath']);
+  const path = getInputString(input, ['file_path', 'path', 'filePath', 'absolute_path']);
   if (path) {
     return `${humanizeToolName(block.name)} ${shortenPath(path)}`;
   }
@@ -193,7 +212,7 @@ function extractEditedFileDiffFromPatch(block: ToolBlock): { fileName: string; a
   }
 
   const lines = patchText.split('\n');
-  let fileName = getInputString(block.input, ['file_path', 'path', 'filePath', 'file']) || '';
+  let fileName = getInputString(block.input, ['file_path', 'path', 'filePath', 'file', 'absolute_path']) || '';
 
   const fileMarker = lines.find(line => line.startsWith('*** Update File: ') || line.startsWith('*** Add File: ') || line.startsWith('*** Delete File: '));
   if (fileMarker) {
@@ -279,7 +298,7 @@ function extractEditedFileDiffFromOldNew(block: ToolBlock): { fileName: string; 
     return null;
   }
 
-  const fileName = getInputString(input, ['file_path', 'path', 'filePath', 'file']) || 'unknown file';
+  const fileName = getInputString(input, ['file_path', 'path', 'filePath', 'file', 'absolute_path']) || 'unknown file';
   const renderedLines: { kind: 'add' | 'del' | 'ctx' | 'meta'; text: string; lineNo?: number }[] = [];
   let added = 0;
   let removed = 0;
@@ -351,7 +370,7 @@ function renderWriteFilePreview(block: ToolBlock): string {
     return '';
   }
 
-  const filePath = getInputString(block.input || {}, ['file_path', 'path', 'filePath', 'file']) || 'unknown file';
+  const filePath = getInputString(block.input || {}, ['file_path', 'path', 'filePath', 'file', 'absolute_path']) || 'unknown file';
   const content = getInputString(block.input || {}, ['content', 'file_content', 'text', 'body', 'data']);
   const raw = (content || block.output || '').trim();
   if (!raw) {
@@ -447,7 +466,54 @@ function renderCommandPreview(block: ToolBlock): string {
   `;
 }
 
+function renderTodoWritePreview(block: ToolBlock): string {
+  if (getToolKind(block) !== 'todo') {
+    return '';
+  }
+
+  const todos = block.input?.todos as Array<{ task?: string; content?: string; status?: string }> | undefined;
+  if (!Array.isArray(todos) || todos.length === 0) {
+    return '';
+  }
+
+  const entriesHtml = todos.map(entry => {
+    const text = entry.task || entry.content || '';
+    const status = entry.status || 'pending';
+    let icon: string;
+    let statusClass: string;
+    switch (status) {
+      case 'completed':
+        icon = '✓';
+        statusClass = 'completed';
+        break;
+      case 'in_progress':
+        icon = '⏳';
+        statusClass = 'in-progress';
+        break;
+      default:
+        icon = '☐';
+        statusClass = 'pending';
+    }
+    return `
+      <div class="plan-entry ${statusClass}">
+        <span class="plan-entry-icon ${statusClass}">${icon}</span>
+        <span class="plan-entry-text">${escapeHtml(text)}</span>
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <div class="plan-entries">
+      ${entriesHtml}
+    </div>
+  `;
+}
+
 export function renderToolDetailPreview(block: ToolBlock): string {
+  const todo = renderTodoWritePreview(block);
+  if (todo) {
+    return todo;
+  }
   const edited = renderEditedFilePreview(block);
   if (edited) {
     return edited;

@@ -26,6 +26,8 @@ export class WebviewHandler {
   private webview: vscode.Webview | null = null;
   private disposables: vscode.Disposable[] = [];
   private cliChecked = false;
+  private planApprovedMode: 'smart' | 'default' | null = null;
+  private planFeedbackText: string | null = null;
 
   constructor(extensionUri: vscode.Uri, globalState: vscode.Memento) {
     this.extensionUri = extensionUri;
@@ -153,18 +155,25 @@ export class WebviewHandler {
         await this.client.answerQuestions(message.requestId, message.answers);
         break;
 
-      case 'planApproval':
+      case 'planApproval': {
+        const isApproved = message.option === 'smart' || message.option === 'default';
         if (message.requestId === -1) {
           // Synthetic approval: AI ended without calling exit_plan_mode.
-          // Approve → switch to default mode for implementation.
-          // Reject → stay in plan mode so user can refine.
-          if (message.approved) {
-            this.store.setMode('default');
+          if (isApproved) {
+            this.store.setMode(message.option as 'smart' | 'default');
+          } else if (message.option === 'feedback' && message.feedback) {
+            this.planFeedbackText = message.feedback;
           }
         } else {
-          await this.client.approvePlan(message.requestId, message.approved);
+          if (isApproved) {
+            this.planApprovedMode = message.option as 'smart' | 'default';
+          } else if (message.option === 'feedback' && message.feedback) {
+            this.planFeedbackText = message.feedback;
+          }
+          await this.client.approvePlan(message.requestId, isApproved);
         }
         break;
+      }
 
       case 'cancelCurrent':
         await this.client.cancel();
@@ -312,11 +321,13 @@ export class WebviewHandler {
     return files.map(f => path.relative(rootPath, f.fsPath));
   }
 
-  private async handleSendMessage(content: string, attachedFiles: AttachedFile[]): Promise<void> {
+  private async handleSendMessage(content: string, attachedFiles: AttachedFile[], silent = false): Promise<void> {
     // Immediately reflect "running" in UI so Enter has instant feedback.
     // Expensive checks (CLI probe/connect) happen after this optimistic state update.
     this.store.batchUpdate(() => {
-      this.store.addUserMessage(content, attachedFiles);
+      if (!silent) {
+        this.store.addUserMessage(content, attachedFiles);
+      }
       this.store.startAssistantMessage();
       this.store.setStreaming(true);
     });
@@ -345,6 +356,9 @@ export class WebviewHandler {
 
     // Track whether the AI called exit_plan_mode during this run
     let planApprovalEmitted = false;
+    let runSucceeded = false;
+    this.planApprovedMode = null;
+    this.planFeedbackText = null;
 
     await this.client.run(
       {
@@ -364,6 +378,7 @@ export class WebviewHandler {
         this.postMessage({ type: 'streamChunk', chunk });
       },
       () => {
+        runSucceeded = true;
         // Batch: end assistant + stop streaming → single stateUpdated
         this.store.batchUpdate(() => {
           this.store.endAssistantMessage();
@@ -404,6 +419,26 @@ export class WebviewHandler {
         this.store.setSessionId(returnedSessionId);
       }
     });
+
+    // After a plan run completes, handle the user's plan approval choice.
+    if (conversation.mode === 'plan' && runSucceeded) {
+      if (this.planApprovedMode) {
+        // User chose "Yes, smart mode" or "Yes, manual approval" → execute
+        const targetMode = this.planApprovedMode;
+        this.planApprovedMode = null;
+        this.store.setMode(targetMode);
+        await this.handleSendMessage(
+          '<system-reminder>\nPlan mode has been deactivated. The user approved the plan. You are now in execution mode. You may now freely use all tools including write_file, edit_file, run_shell_command, and other modification tools. Please proceed with the implementation.\n</system-reminder>',
+          [],
+          true
+        );
+      } else if (this.planFeedbackText) {
+        // User chose "Tell iFlow what to do instead" → send feedback in plan mode
+        const feedback = this.planFeedbackText;
+        this.planFeedbackText = null;
+        await this.handleSendMessage(feedback, []);
+      }
+    }
   }
 
   postMessage(message: ExtensionMessage): void {

@@ -348,25 +348,46 @@ function attachPlanApprovalListeners(host: AppHost): void {
   const pp = host.getPendingPlanApproval();
   if (!pp) return;
 
-  const handleApproval = (approved: boolean) => {
-    host.postMessage({ type: 'planApproval', requestId: pp.requestId, approved });
+  const handleOption = (option: 'smart' | 'default' | 'keep' | 'feedback', feedback?: string) => {
+    host.postMessage({ type: 'planApproval', requestId: pp.requestId, option, feedback });
     host.clearPendingPlanApproval();
     host.render();
   };
 
-  // Click handlers
-  document.querySelectorAll('[data-plan-approval]').forEach(btn => {
+  // Click handlers for option buttons
+  document.querySelectorAll('[data-plan-option]').forEach(btn => {
     btn.addEventListener('click', () => {
-      const approval = (btn as HTMLElement).dataset.planApproval;
-      handleApproval(approval === 'approve');
+      const option = (btn as HTMLElement).dataset.planOption as 'smart' | 'default' | 'keep';
+      if (option) {
+        handleOption(option);
+      }
     });
   });
 
+  // Feedback input: submit on Enter
+  const feedbackInput = document.querySelector('.plan-feedback-input') as HTMLInputElement | null;
+  if (feedbackInput) {
+    feedbackInput.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        const text = feedbackInput.value.trim();
+        if (text) {
+          handleOption('feedback', text);
+        }
+      }
+    });
+  }
+
   // Global keyboard shortcuts
   const keyHandler = (e: KeyboardEvent) => {
-    if (e.key === '1') { e.preventDefault(); handleApproval(true); }
-    else if (e.key === '2') { e.preventDefault(); handleApproval(false); }
-    else if (e.key === 'Escape') { e.preventDefault(); handleApproval(false); }
+    // Don't intercept when typing in the feedback input
+    if (document.activeElement === feedbackInput) return;
+
+    if (e.key === '1') { e.preventDefault(); handleOption('smart'); }
+    else if (e.key === '2') { e.preventDefault(); handleOption('default'); }
+    else if (e.key === '3') { e.preventDefault(); handleOption('keep'); }
+    else if (e.key === '4') { e.preventDefault(); feedbackInput?.focus(); }
+    else if (e.key === 'Escape') { e.preventDefault(); handleOption('keep'); }
   };
   document.addEventListener('keydown', keyHandler);
 

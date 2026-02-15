@@ -62,6 +62,27 @@ export class ChunkMapper {
   enrichToolInput(message: any): Record<string, unknown> {
     const input: Record<string, unknown> = { ...(message.args || {}) };
 
+    // If args is empty, try to parse from label (subagent format: "toolName: {json}")
+    if (Object.keys(input).length === 0 && message.label) {
+      const colonIdx = message.label.indexOf(': ');
+      if (colonIdx > 0) {
+        const jsonPart = message.label.substring(colonIdx + 2).trim();
+        if (jsonPart.startsWith('{')) {
+          try {
+            const parsed = JSON.parse(jsonPart);
+            if (typeof parsed === 'object' && parsed !== null) {
+              Object.assign(input, parsed);
+            }
+          } catch { /* ignore parse errors */ }
+        }
+      }
+    }
+
+    // Map absolute_path to file_path if not already set
+    if (input.absolute_path && !input.file_path) {
+      input.file_path = input.absolute_path;
+    }
+
     // Merge ToolCallContent fields (path, newText, oldText, markdown)
     if (message.content) {
       if (message.content.path && !input.file_path) {
@@ -170,12 +191,24 @@ export class ChunkMapper {
         const enrichedInput = this.enrichToolInput(message);
         const toolName = message.toolName || message.label || 'unknown';
 
+        // Clean up label: strip JSON args from subagent format "toolName: {json}"
+        let cleanLabel: string | undefined = message.label || undefined;
+        if (cleanLabel) {
+          const colonIdx = cleanLabel.indexOf(': ');
+          if (colonIdx > 0) {
+            const afterColon = cleanLabel.substring(colonIdx + 2).trim();
+            if (afterColon.startsWith('{') || afterColon.startsWith('[')) {
+              cleanLabel = undefined; // Let the renderer derive headline from input
+            }
+          }
+        }
+
         if (message.status === 'pending' || message.status === 'in_progress') {
           chunks.push({
             chunkType: 'tool_start',
             name: toolName,
             input: enrichedInput,
-            label: message.label || undefined
+            label: cleanLabel
           });
         } else if (message.status === 'completed') {
           // Send an input update before completion (block is still 'running')
@@ -185,7 +218,7 @@ export class ChunkMapper {
               chunkType: 'tool_start',
               name: toolName,
               input: enrichedInput,
-              label: message.label || undefined
+              label: cleanLabel
             });
           }
           if (message.output) {
@@ -199,6 +232,15 @@ export class ChunkMapper {
             status: 'completed'
           });
         } else if (message.status === 'failed') {
+          // Send an input update before failure so the renderer has access to data
+          if (Object.keys(enrichedInput).length > 0) {
+            chunks.push({
+              chunkType: 'tool_start',
+              name: toolName,
+              input: enrichedInput,
+              label: cleanLabel
+            });
+          }
           if (message.output) {
             chunks.push({
               chunkType: 'tool_output',

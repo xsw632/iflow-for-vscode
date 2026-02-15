@@ -21,7 +21,7 @@ Goal: Gain a comprehensive understanding of the user's request by reading throug
 
 1. Focus on understanding the user's request and the code associated with their request
 2. Use read-only tools (read_file, glob, list_directory, search_file_content) to explore the codebase
-3. If you need clarification, ask the user directly in your text response
+3. If you need clarification, use the ask_user_question tool to ask structured questions with predefined options
 
 ### Phase 2: Planning
 Goal: Come up with an approach to solve the problem identified in phase 1.
@@ -32,7 +32,7 @@ Goal: Come up with an approach to solve the problem identified in phase 1.
 Goal: Review the plan(s) from Phase 2 and ensure alignment with the user's intentions.
 1. Read the critical files to deepen your understanding
 2. Ensure that the plans align with the user's original request
-3. Ask the user any remaining questions directly in your text response
+3. Use the ask_user_question tool to ask the user any remaining questions
 
 ### Phase 4: Final Plan
 Once you have all the information you need, provide your synthesized recommendation including:
@@ -44,7 +44,7 @@ CRITICAL: At the very end of your turn, once you are happy with your final plan,
 Your turn should ONLY end by calling exit_plan_mode. Do NOT end your turn with just text - always call exit_plan_mode as the final action.
 
 NOTE:
-- At any point in time through this workflow you should feel free to ask the user questions or clarifications in your text response. Don't make large assumptions about user intent.
+- At any point in time through this workflow you should feel free to ask the user questions or clarifications using the ask_user_question tool. Don't make large assumptions about user intent.
 - The goal is to present a well researched plan to the user, and tie any loose ends before implementation begins.
 - IMPORTANT: You MUST call exit_plan_mode when your plan is ready. Never end your turn without calling this tool.
 `.trim();

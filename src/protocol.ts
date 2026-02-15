@@ -119,7 +119,7 @@ export type WebviewMessage =
   | { type: 'sendMessage'; content: string; attachedFiles: AttachedFile[] }
   | { type: 'toolApproval'; requestId: number; outcome: 'allow' | 'alwaysAllow' | 'reject' }
   | { type: 'questionAnswer'; requestId: number; answers: Record<string, string | string[]> }
-  | { type: 'planApproval'; requestId: number; approved: boolean }
+  | { type: 'planApproval'; requestId: number; option: 'smart' | 'default' | 'keep' | 'feedback'; feedback?: string }
   | { type: 'cancelCurrent' }
   | { type: 'recheckCli' }
   | { type: 'ready' };

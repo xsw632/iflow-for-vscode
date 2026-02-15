@@ -566,16 +566,28 @@ function renderPlanApprovalPanel(pp: PendingPlanApproval): string {
       <div class="plan-approval-question">Approve this plan?</div>
       ${planContentHtml}
       <div class="approval-options">
-        <button class="approval-option" data-plan-approval="approve">
+        <button class="approval-option" data-plan-option="smart">
           <span class="approval-key">1</span>
-          <span class="approval-label">Approve</span>
+          <span class="approval-label">Yes, and use smart mode edits</span>
         </button>
-        <button class="approval-option" data-plan-approval="reject">
+        <button class="approval-option" data-plan-option="default">
           <span class="approval-key">2</span>
-          <span class="approval-label">Reject</span>
+          <span class="approval-label">Yes, and manually approve edits</span>
         </button>
+        <button class="approval-option" data-plan-option="keep">
+          <span class="approval-key">3</span>
+          <span class="approval-label">No, keep planning</span>
+        </button>
+        <div class="approval-option plan-feedback-option">
+          <span class="approval-key">4</span>
+          <input
+            type="text"
+            class="approval-feedback-input plan-feedback-input"
+            placeholder="Tell iFlow what to do instead..."
+          />
+        </div>
       </div>
-      <div class="approval-hint">Esc to reject</div>
+      <div class="approval-hint">Esc to keep planning</div>
     </div>
   `;
 }
