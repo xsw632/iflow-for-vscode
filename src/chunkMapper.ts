@@ -1,6 +1,6 @@
 // Pure mapping logic: converts SDK messages into StreamChunks for the webview.
 
-import { StreamChunk, AttachedFile } from './protocol';
+import { StreamChunk, AttachedFile, IDEContext } from './protocol';
 import { ThinkingParser } from './thinkingParser';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -10,6 +10,7 @@ interface RunOptionsLike {
   prompt: string;
   attachedFiles: AttachedFile[];
   workspaceFiles?: string[];
+  ideContext?: IDEContext;
 }
 
 export class ChunkMapper {
@@ -35,6 +36,20 @@ export class ChunkMapper {
       prompt += '=== Workspace Files ===\n';
       prompt += options.workspaceFiles.join('\n');
       prompt += '\n=== End Workspace Files ===\n\n';
+    }
+
+    const ctx = options.ideContext;
+    if (ctx && (ctx.activeFile || ctx.selection)) {
+      prompt += '=== IDE Context ===\n';
+      if (ctx.activeFile) {
+        prompt += `Active File: ${ctx.activeFile.path}\n`;
+      }
+      if (ctx.selection) {
+        prompt += `Selected Text (${ctx.selection.fileName}:${ctx.selection.lineStart}-${ctx.selection.lineEnd}):\n`;
+        prompt += ctx.selection.text;
+        prompt += '\n';
+      }
+      prompt += '=== End IDE Context ===\n\n';
     }
 
     if (options.attachedFiles.length > 0) {

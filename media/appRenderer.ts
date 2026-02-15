@@ -6,6 +6,7 @@ import type {
   OutputBlock,
   Message,
   Conversation,
+  IDEContext,
 } from '../src/protocol';
 import { MODELS } from '../src/protocol';
 import { escapeHtml, renderMarkdown } from './markdownRenderer';
@@ -376,6 +377,40 @@ export function renderPendingIndicator(faviconUri: string): string {
   `;
 }
 
+// ── IDE Context Chips ────────────────────────────────────────────
+
+export function renderIDEContextChips(
+  context: IDEContext,
+  dismissed: { activeFile: boolean; selection: boolean }
+): string {
+  const chips: string[] = [];
+
+  if (context.activeFile && !dismissed.activeFile) {
+    chips.push(`
+      <div class="ide-context-chip" title="${escapeAttr(context.activeFile.path)}">
+        <span class="file-icon">${getFileIcon(context.activeFile.path)}</span>
+        <span class="ide-context-label">${escapeHtml(context.activeFile.name)}</span>
+        <button class="ide-context-dismiss" data-dismiss="activeFile" title="Remove">&times;</button>
+      </div>
+    `);
+  }
+
+  if (context.selection && !dismissed.selection) {
+    const label = `${context.selection.fileName}:${context.selection.lineStart}-${context.selection.lineEnd}`;
+    chips.push(`
+      <div class="ide-context-chip" title="${escapeAttr(context.selection.text.substring(0, 200))}">
+        <span class="file-icon">&#9986;</span>
+        <span class="ide-context-label">${escapeHtml(label)}</span>
+        <button class="ide-context-dismiss" data-dismiss="selection" title="Remove">&times;</button>
+      </div>
+    `);
+  }
+
+  if (chips.length === 0) { return ''; }
+
+  return `<div class="ide-context-chips" id="ide-context-chips">${chips.join('')}</div>`;
+}
+
 // ── Composer ────────────────────────────────────────────────────────
 
 export function renderComposer(opts: {
@@ -384,6 +419,7 @@ export function renderComposer(opts: {
   pendingConfirmation: PendingConfirmation | null;
   pendingQuestion: PendingQuestion | null;
   pendingPlanApproval: PendingPlanApproval | null;
+  ideContextChipsHtml: string;
   attachedFilesHtml: string;
   slashMenuHtml: string;
   mentionMenuHtml: string;
@@ -408,6 +444,7 @@ export function renderComposer(opts: {
 
   return `
     <div class="composer">
+      ${opts.ideContextChipsHtml}
       ${opts.attachedFilesHtml}
       <div class="composer-input-row">
         <button id="attach-btn" class="icon-btn" title="Attach files">

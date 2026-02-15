@@ -26,6 +26,7 @@ export interface AppHost {
   clearPendingQuestion(): void;
   getPendingPlanApproval(): PendingPlanApproval | null;
   clearPendingPlanApproval(): void;
+  dismissIDEContext(type: 'activeFile' | 'selection'): void;
 
   // DOM helpers
   autoSizeSelect(select: HTMLSelectElement): void;
@@ -431,6 +432,20 @@ export function attachFileOpenListeners(postMessage: (msg: WebviewMessage) => vo
       const path = (btn as HTMLElement).dataset.openFilePath;
       if (!path) return;
       postMessage({ type: 'openFile', path });
+    });
+  });
+}
+
+// ── IDE Context listeners ────────────────────────────────────────────
+
+export function attachIDEContextListeners(host: AppHost): void {
+  document.querySelectorAll('.ide-context-dismiss').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const type = (btn as HTMLElement).dataset.dismiss as 'activeFile' | 'selection';
+      if (type) {
+        host.dismissIDEContext(type);
+        host.render();
+      }
     });
   });
 }

@@ -5,7 +5,8 @@ import type {
   Conversation,
   ConversationState,
   WebviewMessage,
-  ExtensionMessage
+  ExtensionMessage,
+  IDEContext
 } from '../src/protocol';
 import { escapeHtml } from './markdownRenderer';
 import { SlashMenuController } from './slashMenuController';
@@ -18,6 +19,7 @@ import {
   renderComposer,
   renderBlock,
   renderPendingIndicator,
+  renderIDEContextChips,
 } from './appRenderer';
 import type { PendingConfirmation, PendingQuestion, PendingPlanApproval } from './appRenderer';
 import {
@@ -26,6 +28,7 @@ import {
   attachComposerListeners,
   attachContentListeners,
   attachFileOpenListeners,
+  attachIDEContextListeners,
 } from './eventBinder';
 import type { AppHost } from './eventBinder';
 
@@ -50,6 +53,8 @@ class IFlowApp implements AppHost {
   private pendingQuestion: PendingQuestion | null = null;
   private pendingPlanApproval: PendingPlanApproval | null = null;
   private clearInputOnNextRender = false;
+  private ideContext: IDEContext = { activeFile: null, selection: null };
+  private ideContextDismissed = { activeFile: false, selection: false };
 
   // AppHost public state (accessed by event binders)
   showConversationPanel = false;
@@ -125,6 +130,10 @@ class IFlowApp implements AppHost {
     this.pendingPlanApproval = null;
   }
 
+  dismissIDEContext(type: 'activeFile' | 'selection'): void {
+    this.ideContextDismissed = { ...this.ideContextDismissed, [type]: true };
+  }
+
   autoSizeSelect(select: HTMLSelectElement): void {
     const option = select.options[select.selectedIndex];
     if (!option) return;
@@ -170,10 +179,19 @@ class IFlowApp implements AppHost {
     if (!this.inputCtrl.canSend(content)) { return; }
 
     const attachedFiles = this.inputCtrl.consumeAttachedFiles();
+
+    // Build effective IDE context excluding dismissed items
+    const ideContext: IDEContext = {
+      activeFile: this.ideContextDismissed.activeFile ? null : this.ideContext.activeFile,
+      selection: this.ideContextDismissed.selection ? null : this.ideContext.selection,
+    };
+    const hasContext = ideContext.activeFile !== null || ideContext.selection !== null;
+
     this.vscode.postMessage({
       type: 'sendMessage',
       content,
-      attachedFiles
+      attachedFiles,
+      ...(hasContext ? { ideContext } : {})
     });
 
     // Clear input
@@ -282,6 +300,25 @@ class IFlowApp implements AppHost {
         this.pendingQuestion = null;
         this.pendingPlanApproval = null;
         break;
+
+      case 'ideContextChanged': {
+        const prev = this.ideContext;
+        const next = message.context;
+        // Reset dismiss when the actual context changes
+        if (prev.activeFile?.path !== next.activeFile?.path) {
+          this.ideContextDismissed = { ...this.ideContextDismissed, activeFile: false };
+        }
+        if (prev.selection?.filePath !== next.selection?.filePath ||
+            prev.selection?.lineStart !== next.selection?.lineStart ||
+            prev.selection?.lineEnd !== next.selection?.lineEnd ||
+            prev.selection?.text !== next.selection?.text) {
+          this.ideContextDismissed = { ...this.ideContextDismissed, selection: false };
+        }
+        this.ideContext = next;
+        // Incrementally update IDE context chips without full DOM rebuild
+        this.updateIDEContextChips();
+        break;
+      }
     }
   }
 
@@ -321,6 +358,7 @@ class IFlowApp implements AppHost {
           pendingConfirmation: this.pendingConfirmation,
           pendingQuestion: this.pendingQuestion,
           pendingPlanApproval: this.pendingPlanApproval,
+          ideContextChipsHtml: renderIDEContextChips(this.ideContext, this.ideContextDismissed),
           attachedFilesHtml: this.inputCtrl.renderAttachedFilesHtml(),
           slashMenuHtml: this.slashMenu.isVisible ? this.slashMenu.renderHtml() : '',
           mentionMenuHtml: this.inputCtrl.isMentionVisible ? this.inputCtrl.renderMentionMenuHtml() : '',
@@ -339,6 +377,7 @@ class IFlowApp implements AppHost {
     this.inputCtrl.attachMentionListeners();
     this.inputCtrl.attachFileRemoveListeners();
     attachFileOpenListeners((msg) => this.vscode.postMessage(msg));
+    attachIDEContextListeners(this);
     this.setupComposerLayoutObserver();
 
     // Restore input state after DOM rebuild
@@ -424,6 +463,24 @@ class IFlowApp implements AppHost {
     }
 
     this.scrollToBottom();
+  }
+
+  /**
+   * Incrementally update IDE context chips without a full DOM rebuild.
+   */
+  private updateIDEContextChips(): void {
+    const existing = document.getElementById('ide-context-chips');
+    const newHtml = renderIDEContextChips(this.ideContext, this.ideContextDismissed);
+    if (existing) {
+      existing.outerHTML = newHtml;
+    } else if (newHtml) {
+      const composer = document.querySelector('.composer');
+      if (composer) {
+        composer.insertAdjacentHTML('afterbegin', newHtml);
+      }
+    }
+    attachIDEContextListeners(this);
+    this.syncMessagesBottomInset();
   }
 
   // ── Layout helpers ─────────────────────────────────────────────────

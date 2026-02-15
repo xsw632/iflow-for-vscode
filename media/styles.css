@@ -813,6 +813,51 @@ body {
   border-color: var(--vscode-focusBorder);
 }
 
+/* ── IDE Context Chips ─────────────────────────────────────────── */
+
+.ide-context-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  padding: 0 var(--spacing-xs);
+}
+
+.ide-context-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background-color: var(--vscode-editorWidget-background, rgba(128,128,128,0.1));
+  border-left: 2px solid var(--vscode-focusBorder, #007fd4);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  max-width: 240px;
+}
+
+.ide-context-chip .ide-context-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ide-context-chip .ide-context-dismiss {
+  background: none;
+  border: none;
+  color: currentColor;
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+.ide-context-chip .ide-context-dismiss:hover {
+  opacity: 1;
+}
+
 .attached-files {
   display: flex;
   flex-wrap: wrap;

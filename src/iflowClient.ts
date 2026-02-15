@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { StreamChunk, ConversationMode, ModelType, AttachedFile } from './protocol';
+import { StreamChunk, ConversationMode, ModelType, AttachedFile, IDEContext } from './protocol';
 import { ChunkMapper } from './chunkMapper';
 import { ProcessManager, ManualStartInfo } from './processManager';
 
@@ -78,6 +78,7 @@ interface RunOptions {
   model: ModelType;
   workspaceFiles?: string[];
   sessionId?: string;
+  ideContext?: IDEContext;
 }
 
 export class IFlowClient {

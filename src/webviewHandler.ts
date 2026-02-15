@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { ConversationStore } from './store';
 import { IFlowClient } from './iflowClient';
-import { WebviewMessage, ExtensionMessage, AttachedFile } from './protocol';
+import { WebviewMessage, ExtensionMessage, AttachedFile, IDEContext } from './protocol';
 
 interface CliAvailabilityResult {
   version: string | null;
@@ -28,6 +28,9 @@ export class WebviewHandler {
   private cliChecked = false;
   private planApprovedMode: 'smart' | 'default' | null = null;
   private planFeedbackText: string | null = null;
+  private selectionDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private static readonly SELECTION_DEBOUNCE_MS = 300;
+  private static readonly MAX_SELECTION_CHARS = 5000;
 
   constructor(extensionUri: vscode.Uri, globalState: vscode.Memento) {
     this.extensionUri = extensionUri;
@@ -67,6 +70,24 @@ export class WebviewHandler {
       }
     );
     this.disposables.push(configDisposable);
+
+    // Track active editor changes for IDE context
+    const editorDisposable = vscode.window.onDidChangeActiveTextEditor(() => {
+      this.pushIDEContext();
+    });
+    this.disposables.push(editorDisposable);
+
+    // Track selection changes (debounced)
+    const selectionDisposable = vscode.window.onDidChangeTextEditorSelection(() => {
+      if (this.selectionDebounceTimer) {
+        clearTimeout(this.selectionDebounceTimer);
+      }
+      this.selectionDebounceTimer = setTimeout(() => {
+        this.selectionDebounceTimer = null;
+        this.pushIDEContext();
+      }, WebviewHandler.SELECTION_DEBOUNCE_MS);
+    });
+    this.disposables.push(selectionDisposable);
   }
 
   getStore(): ConversationStore {
@@ -79,6 +100,7 @@ export class WebviewHandler {
         // Always send current state immediately - no CLI check on startup.
         // CLI availability is checked lazily when user sends a message.
         this.postMessage({ type: 'stateUpdated', state: this.store.getState() });
+        this.pushIDEContext();
         break;
 
       case 'recheckCli':
@@ -134,7 +156,7 @@ export class WebviewHandler {
         break;
 
       case 'sendMessage':
-        await this.handleSendMessage(message.content, message.attachedFiles);
+        await this.handleSendMessage(message.content, message.attachedFiles, false, message.ideContext);
         break;
 
       case 'toolApproval':
@@ -321,7 +343,7 @@ export class WebviewHandler {
     return files.map(f => path.relative(rootPath, f.fsPath));
   }
 
-  private async handleSendMessage(content: string, attachedFiles: AttachedFile[], silent = false): Promise<void> {
+  private async handleSendMessage(content: string, attachedFiles: AttachedFile[], silent = false, ideContext?: IDEContext): Promise<void> {
     // Immediately reflect "running" in UI so Enter has instant feedback.
     // Expensive checks (CLI probe/connect) happen after this optimistic state update.
     this.store.batchUpdate(() => {
@@ -368,7 +390,8 @@ export class WebviewHandler {
         think: conversation.think,
         model: conversation.model,
         workspaceFiles,
-        sessionId: conversation.sessionId
+        sessionId: conversation.sessionId,
+        ideContext
       },
       (chunk) => {
         if (chunk.chunkType === 'plan_approval') {
@@ -441,6 +464,34 @@ export class WebviewHandler {
     }
   }
 
+  private pushIDEContext(): void {
+    const editor = vscode.window.activeTextEditor;
+    const context: IDEContext = { activeFile: null, selection: null };
+
+    if (editor && editor.document.uri.scheme === 'file') {
+      const filePath = editor.document.uri.fsPath;
+      const fileName = path.basename(filePath);
+      context.activeFile = { path: filePath, name: fileName };
+
+      const selection = editor.selection;
+      if (!selection.isEmpty) {
+        const text = editor.document.getText(selection);
+        const cappedText = text.length > WebviewHandler.MAX_SELECTION_CHARS
+          ? text.substring(0, WebviewHandler.MAX_SELECTION_CHARS)
+          : text;
+        context.selection = {
+          filePath,
+          fileName,
+          text: cappedText,
+          lineStart: selection.start.line + 1,
+          lineEnd: selection.end.line + 1,
+        };
+      }
+    }
+
+    this.postMessage({ type: 'ideContextChanged', context });
+  }
+
   postMessage(message: ExtensionMessage): void {
     this.webview?.postMessage(message);
   }
@@ -491,6 +542,10 @@ export class WebviewHandler {
   }
 
   async dispose(): Promise<void> {
+    if (this.selectionDebounceTimer) {
+      clearTimeout(this.selectionDebounceTimer);
+      this.selectionDebounceTimer = null;
+    }
     this.disposeListeners();
     await this.client.dispose();
     this.webview = null;

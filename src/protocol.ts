@@ -80,6 +80,18 @@ export interface AttachedFile {
   truncated?: boolean;
 }
 
+// IDE context from the active editor
+export interface IDEContext {
+  activeFile: { path: string; name: string } | null;
+  selection: {
+    filePath: string;
+    fileName: string;
+    text: string;
+    lineStart: number;
+    lineEnd: number;
+  } | null;
+}
+
 // Conversation state
 export interface Conversation {
   id: string;
@@ -116,7 +128,7 @@ export type WebviewMessage =
   | { type: 'setMode'; mode: ConversationMode }
   | { type: 'setThink'; enabled: boolean }
   | { type: 'setModel'; model: ModelType }
-  | { type: 'sendMessage'; content: string; attachedFiles: AttachedFile[] }
+  | { type: 'sendMessage'; content: string; attachedFiles: AttachedFile[]; ideContext?: IDEContext }
   | { type: 'toolApproval'; requestId: number; outcome: 'allow' | 'alwaysAllow' | 'reject' }
   | { type: 'questionAnswer'; requestId: number; answers: Record<string, string | string[]> }
   | { type: 'planApproval'; requestId: number; option: 'smart' | 'default' | 'keep' | 'feedback'; feedback?: string }
@@ -132,4 +144,5 @@ export type ExtensionMessage =
   | { type: 'stateUpdated'; state: ConversationState }
   | { type: 'streamChunk'; chunk: StreamChunk }
   | { type: 'streamEnd' }
-  | { type: 'streamError'; error: string };
+  | { type: 'streamError'; error: string }
+  | { type: 'ideContextChanged'; context: IDEContext };
