@@ -131,18 +131,100 @@ export class IFlowClient {
     return path.join(os.homedir(), '.iflow', 'settings.json');
   }
 
-  private updateIFlowCliModel(model: ModelType): void {
+  /**
+   * Read iFlow CLI settings from ~/.iflow/settings.json.
+   * Creates default settings if file doesn't exist.
+   */
+  private readSettings(): { settings: Record<string, unknown>; path: string } | null {
     try {
       const settingsPath = this.getIFlowSettingsPath();
-      const content = fs.readFileSync(settingsPath, 'utf-8');
-      const settings = JSON.parse(content);
-      if (settings.modelName !== model) {
-        settings.modelName = model;
-        fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
+      const settingsDir = path.dirname(settingsPath);
+
+      // Ensure the .iflow directory exists
+      if (!fs.existsSync(settingsDir)) {
+        fs.mkdirSync(settingsDir, { recursive: true });
+        this.log(`Created iFlow settings directory: ${settingsDir}`);
+      }
+
+      // Read existing settings or return default
+      if (fs.existsSync(settingsPath)) {
+        try {
+          const content = fs.readFileSync(settingsPath, 'utf-8');
+          return { settings: JSON.parse(content), path: settingsPath };
+        } catch (readErr) {
+          this.log(`Failed to read existing settings, using defaults: ${readErr instanceof Error ? readErr.message : String(readErr)}`);
+        }
+      }
+
+      return { settings: {}, path: settingsPath };
+    } catch (err) {
+      this.log(`Failed to read iFlow settings: ${err instanceof Error ? err.message : String(err)}`);
+      return null;
+    }
+  }
+
+  /**
+   * Write iFlow CLI settings to ~/.iflow/settings.json.
+   * Uses platform-appropriate file permissions.
+   */
+  private writeSettings(settings: Record<string, unknown>, settingsPath: string): boolean {
+    try {
+      const content = JSON.stringify(settings, null, 2);
+
+      // Windows doesn't support Unix-style permissions, use default
+      // Unix-like systems use 0o600 (read/write for owner only)
+      if (process.platform === 'win32') {
+        fs.writeFileSync(settingsPath, content, 'utf-8');
+      } else {
+        fs.writeFileSync(settingsPath, content, { encoding: 'utf-8', mode: 0o600 });
+      }
+      return true;
+    } catch (err) {
+      this.log(`Failed to write iFlow settings: ${err instanceof Error ? err.message : String(err)}`);
+      return false;
+    }
+  }
+
+  private updateIFlowCliModel(model: ModelType): void {
+    const result = this.readSettings();
+    if (!result) return;
+
+    const { settings, path: settingsPath } = result;
+
+    if (settings.modelName !== model) {
+      settings.modelName = model;
+      if (this.writeSettings(settings, settingsPath)) {
         this.log(`Updated ~/.iflow/settings.json modelName to: ${model}`);
       }
-    } catch (err) {
-      this.log(`Failed to update iFlow CLI model: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  private updateIFlowCliApiConfig(): void {
+    const result = this.readSettings();
+    if (!result) return;
+
+    const { settings, path: settingsPath } = result;
+    const config = this.getConfig();
+    let updated = false;
+
+    if (config.baseUrl && settings.baseUrl !== config.baseUrl) {
+      settings.baseUrl = config.baseUrl;
+      updated = true;
+      this.log(`Updated ~/.iflow/settings.json baseUrl to: ${config.baseUrl}`);
+    }
+
+    // Also update apiKey if available (may be stored in separate config key)
+    const apiKey = vscode.workspace.getConfiguration('iflow').get<string | null>('apiKey', null);
+    if (apiKey && settings.apiKey !== apiKey) {
+      settings.apiKey = apiKey;
+      updated = true;
+      this.log(`Updated ~/.iflow/settings.json apiKey`);
+    }
+
+    if (updated) {
+      if (this.writeSettings(settings, settingsPath)) {
+        this.log(`Saved iFlow settings with secure permissions`);
+      }
     }
   }
 
@@ -179,12 +261,20 @@ export class IFlowClient {
 
     try {
       const config = this.getConfig();
+
+      // Update API configuration in CLI settings before starting
+      this.updateIFlowCliApiConfig();
+
       const manualStart = await this.processManager.resolveStartMode(config);
+
+      // Store script path for error messages
+      let iflowScriptPath: string | undefined;
 
       if (manualStart) {
         diag.push(`nodePath: ${manualStart.nodePath}`);
         diag.push(`iflowScript: ${manualStart.iflowScript}`);
         diag.push(`port: ${manualStart.port}`);
+        iflowScriptPath = manualStart.iflowScript;
         this.logInfo(`Resolved: node=${manualStart.nodePath}, script=${manualStart.iflowScript}, port=${manualStart.port}`);
         await this.processManager.startManagedProcess(manualStart.nodePath, manualStart.port, manualStart.iflowScript);
       } else {
@@ -202,11 +292,36 @@ export class IFlowClient {
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       diag.push(`error: ${errorMsg}`);
+
+      // Add troubleshooting suggestions based on error type
+      const suggestions: string[] = [];
+      if (errorMsg.includes('Failed to connect') || errorMsg.includes('WebSocket')) {
+        suggestions.push('建议排查步骤：');
+        suggestions.push('1. 检查端口是否被占用: netstat -ano | findstr 8090');
+        // Use the actual script path if available, otherwise show generic message
+        if (iflowScriptPath) {
+          suggestions.push(`2. 手动启动 CLI 查看输出: node "${iflowScriptPath}" --experimental-acp --port ${config.port}`);
+        } else {
+          suggestions.push('2. 手动启动 CLI 查看输出: node <iflow-cli-path> --experimental-acp --port 8090');
+        }
+        suggestions.push('3. 检查 CLI 版本是否支持 --experimental-acp 参数');
+        suggestions.push('4. 检查 Windows 防火墙是否阻止 localhost 连接');
+      }
+      if (errorMsg.includes('iFlow CLI not found')) {
+        suggestions.push('建议排查步骤：');
+        suggestions.push('1. 确认 iFlow CLI 已安装: npm install -g @iflow-ai/iflow-cli');
+        suggestions.push('2. 检查 PATH 环境变量是否包含 npm 全局目录');
+      }
+
       this.logInfo(`iFlow CLI not available: ${errorMsg}`);
       this.logInfo(`--- Diagnostics ---\n${diag.join('\n')}\n-------------------`);
+      if (suggestions.length > 0) {
+        this.logInfo(`--- Troubleshooting ---\n${suggestions.join('\n')}\n---------------------`);
+      }
+
       // Show output channel so user can see diagnostics
       this.outputChannel?.show(true);
-      return { version: null, diagnostics: diag.join('\n') };
+      return { version: null, diagnostics: diag.join('\n') + (suggestions.length > 0 ? '\n\n' + suggestions.join('\n') : '') };
     } finally {
       // Don't stop the managed process here - keep it running for future connections
     }
@@ -224,6 +339,9 @@ export class IFlowClient {
 
     // Update model in CLI settings so all internal code paths use it
     this.updateIFlowCliModel(options.model);
+
+    // Update API configuration in CLI settings
+    this.updateIFlowCliApiConfig();
 
     this.log(`Starting run with options: ${JSON.stringify({ mode: options.mode, model: options.model, think: options.think, sessionId: options.sessionId })}`);
 

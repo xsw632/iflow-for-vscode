@@ -146,8 +146,10 @@ function parseCmdWrapper(cmdPath: string, log: Logger): string | null {
 function parsePs1Wrapper(ps1Path: string, log: Logger): string | null {
   try {
     const content = fs.readFileSync(ps1Path, 'utf-8');
-    // Match patterns like: "$basedir/node_modules/iflow/dist/cli.js"
-    const match = content.match(/"\$basedir[/\\](.*?\.js)"/);
+    // Match patterns like: "$basedir/node_modules/@iflow-ai/iflow-cli/bundle/entry.js"
+    // Use a more specific regex that directly matches node_modules path, ignoring $exe variable
+    // Limit path length to 200 chars to avoid matching invalid content
+    const match = content.match(/\$basedir[/\\](node_modules[/\\][^"']{0,200}?\.js)/);
     if (match) {
       const dir = path.dirname(ps1Path);
       const jsPath = path.join(dir, match[1].replace(/\//g, path.sep));
@@ -155,9 +157,20 @@ function parsePs1Wrapper(ps1Path: string, log: Logger): string | null {
         return jsPath;
       }
       log(`[.ps1 parse] JS path extracted but does not exist: ${jsPath}`);
+    } else {
+      // Fallback: try the original pattern for compatibility
+      const fallbackMatch = content.match(/"\$basedir[/\\](.*?\.js)"/);
+      if (fallbackMatch) {
+        const dir = path.dirname(ps1Path);
+        const jsPath = path.join(dir, fallbackMatch[1].replace(/\//g, path.sep));
+        // Filter out paths containing variables like $exe
+        if (!jsPath.includes('$') && fs.existsSync(jsPath)) {
+          return jsPath;
+        }
+      }
     }
-  } catch {
-    log(`[.ps1 parse] failed to read: ${ps1Path}`);
+  } catch (err) {
+    log(`[.ps1 parse] failed to read ${ps1Path}: ${err instanceof Error ? err.message : String(err)}`);
   }
   return null;
 }
