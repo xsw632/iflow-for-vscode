@@ -86,6 +86,12 @@ export class IFlowClient {
   private outputChannel: vscode.OutputChannel | null = null;
   private isConnected = false;
   private isCancelled = false;
+  /** The conversation mode for which the current connection was established. */
+  private connectedMode: ConversationMode | null = null;
+  /** The session ID currently loaded on the persistent connection. */
+  private loadedSessionId: string | null = null;
+  /** Cached manualStart info to avoid re-resolving on every run. */
+  private cachedManualStart: ManualStartInfo | null | undefined = undefined;
   private chunkMapper = new ChunkMapper(getSDK, (msg) => this.log(msg));
   private processManager = new ProcessManager(
     (msg) => this.log(msg),
@@ -252,6 +258,71 @@ export class IFlowClient {
     return options;
   }
 
+  /**
+   * Ensure a persistent SDK connection exists for the given mode.
+   * Reuses the existing connection when possible; reconnects only when the
+   * mode changes or the previous connection was lost.
+   */
+  private async ensureConnected(mode: ConversationMode): Promise<void> {
+    // Already connected with matching mode → reuse
+    if (this.isConnected && this.client && this.connectedMode === mode) {
+      this.log(`Reusing existing connection (mode=${mode})`);
+      return;
+    }
+
+    // Mode changed or not connected → tear down stale connection first
+    if (this.isConnected && this.client) {
+      this.log(`Mode changed (${this.connectedMode} → ${mode}), reconnecting`);
+      await this.disconnect();
+    }
+
+    const config = this.getConfig();
+
+    // Resolve how to start the process (cached across the instance lifetime)
+    if (this.cachedManualStart === undefined) {
+      this.cachedManualStart = await this.processManager.resolveStartMode(config);
+    }
+
+    // Start the managed process if needed
+    if (this.cachedManualStart && !this.processManager.hasProcess) {
+      await this.processManager.startManagedProcess(
+        this.cachedManualStart.nodePath,
+        this.cachedManualStart.port,
+        this.cachedManualStart.iflowScript
+      );
+    }
+
+    // Build session settings for this mode
+    const sessionSettings: Record<string, unknown> = {
+      permission_mode: mode,
+    };
+    if (mode === 'plan') {
+      sessionSettings.append_system_prompt = PLAN_MODE_INSTRUCTIONS;
+    }
+
+    const sdkOptions: Record<string, unknown> = {
+      ...this.getSDKOptions(this.cachedManualStart),
+      sessionSettings,
+    };
+
+    const sdk = await getSDK();
+    this.client = new sdk.IFlowClient(sdkOptions);
+    await this.client.connect();
+
+    // Install all monkey-patches once per connection.
+    // patchQuestions and patchPermission are orthogonal and safe to
+    // install together regardless of mode.
+    this.patchTransport(this.client);
+    this.patchQuestions(this.client);
+    this.patchPermission(this.client);
+
+    this.isConnected = true;
+    this.connectedMode = mode;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    this.loadedSessionId = (this.client as any).sessionId ?? null;
+    this.log(`Connected to iFlow (mode=${mode}, sessionId=${this.loadedSessionId})`);
+  }
+
   async checkAvailability(): Promise<{ version: string | null; diagnostics: string }> {
     const diag: string[] = [];
     diag.push(`platform: ${process.platform} (${process.arch})`);
@@ -348,51 +419,26 @@ export class IFlowClient {
     this.log(`Starting run with options: ${JSON.stringify({ mode: options.mode, model: options.model, think: options.think, sessionId: options.sessionId })}`);
 
     try {
-      const config = this.getConfig();
-      const manualStart = await this.processManager.resolveStartMode(config);
+      // Establish or reuse a persistent connection
+      await this.ensureConnected(options.mode);
 
-      // If using manual start and process isn't running, start it
-      if (manualStart && !this.processManager.hasProcess) {
-        await this.processManager.startManagedProcess(manualStart.nodePath, manualStart.port, manualStart.iflowScript);
+      // Drain any stale messages from a previous run
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const messageQueue: any[] = (this.client as any).messageQueue;
+      if (messageQueue && messageQueue.length > 0) {
+        this.log(`Draining ${messageQueue.length} stale message(s) from previous run`);
+        messageQueue.length = 0;
       }
-
-      const sessionSettings: Record<string, unknown> = {
-        permission_mode: options.mode,
-      };
-
-      // In the ACP path the server never emits the PLAN_MODE_ACTIVATED reminder
-      // that the CLI injects into every user message.  Compensate by appending the
-      // critical plan-mode workflow instructions via append_system_prompt so the AI
-      // reliably calls exit_plan_mode instead of ending the turn early.
-      if (options.mode === 'plan') {
-        sessionSettings.append_system_prompt = PLAN_MODE_INSTRUCTIONS;
-      }
-
-      const sdkOptions: Record<string, unknown> = {
-        ...this.getSDKOptions(manualStart),
-        sessionSettings,
-      };
-
-      const sdk = await getSDK();
-      this.client = new sdk.IFlowClient(sdkOptions);
-      await this.client.connect();
-      this.patchTransport(this.client);
-      if (options.mode === 'plan') {
-        this.patchQuestions(this.client);
-      }
-      if (options.mode === 'default') {
-        this.patchPermission(this.client);
-      }
-      this.isConnected = true;
-      this.log('Connected to iFlow');
 
       // Load existing session to restore context from previous turns
-      if (options.sessionId) {
+      // (only when the requested session differs from the one already loaded)
+      if (options.sessionId && options.sessionId !== this.loadedSessionId) {
         try {
-          await this.client.loadSession(options.sessionId);
+          await this.client!.loadSession(options.sessionId);
+          this.loadedSessionId = options.sessionId;
           this.log(`Loaded existing session: ${options.sessionId}`);
         } catch (err) {
-          this.log(`Failed to load session ${options.sessionId}, continuing with new session: ${err instanceof Error ? err.message : String(err)}`);
+          this.log(`Failed to load session ${options.sessionId}, continuing with current session: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
 
@@ -401,9 +447,10 @@ export class IFlowClient {
       const sessionId = (this.client as any).sessionId;
       returnSessionId = sessionId;
       if (sessionId) {
-        await this.sendSetThink(this.client, sessionId, options.think);
+        await this.sendSetThink(this.client!, sessionId, options.think);
       }
 
+      const sdk = await getSDK();
       const prompt = this.chunkMapper.buildPrompt(options);
 
       // In plan mode, inject the plan-mode workflow as a <system-reminder> into
@@ -415,9 +462,9 @@ export class IFlowClient {
         : prompt;
 
       this.log(`Sending message: ${finalPrompt.substring(0, 100)}...`);
-      await this.client.sendMessage(finalPrompt);
+      await this.client!.sendMessage(finalPrompt);
 
-      for await (const message of this.client.receiveMessages()) {
+      for await (const message of this.client!.receiveMessages()) {
         if (this.isCancelled) {
           this.log('Run cancelled');
           break;
@@ -438,9 +485,12 @@ export class IFlowClient {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       this.log(`Run error: ${errorMessage}`);
+      // Mark connection as broken so next run reconnects
+      this.isConnected = false;
+      this.client = null;
+      this.connectedMode = null;
+      this.loadedSessionId = null;
       onError(errorMessage);
-    } finally {
-      await this.disconnect();
     }
     return returnSessionId;
   }
@@ -448,7 +498,14 @@ export class IFlowClient {
   async cancel(): Promise<void> {
     this.log('Cancelling current operation');
     this.isCancelled = true;
-    await this.disconnect();
+    if (this.client && this.isConnected) {
+      try {
+        await this.client.interrupt();
+      } catch {
+        // If interrupt fails, disconnect to ensure clean state
+        await this.disconnect();
+      }
+    }
   }
 
   private async disconnect(): Promise<void> {
@@ -459,9 +516,11 @@ export class IFlowClient {
       } catch (error) {
         this.log(`Disconnect error: ${error instanceof Error ? error.message : String(error)}`);
       }
-      this.isConnected = false;
     }
+    this.isConnected = false;
     this.client = null;
+    this.connectedMode = null;
+    this.loadedSessionId = null;
   }
 
   /**
@@ -471,6 +530,7 @@ export class IFlowClient {
     await this.disconnect();
     this.processManager.stopManagedProcess();
     this.processManager.clearAutoDetectCache();
+    this.cachedManualStart = undefined;
   }
 
   isRunning(): boolean {

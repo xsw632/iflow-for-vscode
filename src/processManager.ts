@@ -328,11 +328,23 @@ export class ProcessManager {
 
   /**
    * Stop the managed iFlow process.
+   * Uses taskkill on Windows (SIGTERM is unreliable there).
    */
   stopManagedProcess(): void {
     if (this.managedProcess) {
       this.log('Stopping managed iFlow process');
-      this.managedProcess.kill('SIGTERM');
+      if (process.platform === 'win32') {
+        try {
+          cp.execSync(
+            `taskkill /F /T /PID ${this.managedProcess.pid}`,
+            { windowsHide: true, timeout: 5000, stdio: 'ignore' }
+          );
+        } catch {
+          // Process may have already exited
+        }
+      } else {
+        this.managedProcess.kill('SIGTERM');
+      }
       this.managedProcess = null;
     }
   }
