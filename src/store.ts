@@ -63,13 +63,14 @@ export class ConversationStore {
   }
 
   newConversation(): Conversation {
+    const current = this.getCurrentConversation();
     const conversation: Conversation = {
       id: this.generateId(),
       title: 'New Conversation',
       messages: [],
       mode: 'default',
-      think: false,
-      model: MODELS[0],
+      think: current?.think ?? false,
+      model: current?.model ?? MODELS[0],
       createdAt: Date.now(),
       updatedAt: Date.now()
     };
