@@ -1114,6 +1114,20 @@ body {
   color: var(--vscode-dropdown-foreground);
 }
 
+/* Workspace Indicator */
+.workspace-indicator {
+  cursor: default;
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.workspace-name {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Mode Popup */
 .mode-selector-wrapper {
   position: relative;

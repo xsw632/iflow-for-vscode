@@ -425,6 +425,8 @@ export function renderComposer(opts: {
   mentionMenuHtml: string;
   contextUsage: { percent: number; usedTokens: number; totalTokens: number } | undefined;
   showModeMenu: boolean;
+  workspaceFolderName?: string;
+  isMultiRoot: boolean;
 }): string {
   if (opts.pendingConfirmation) {
     return renderApprovalPanel(opts.pendingConfirmation);
@@ -471,6 +473,11 @@ export function renderComposer(opts: {
       </div>
       <div class="composer-status-bar">
         <div class="status-left">
+           ${opts.isMultiRoot && opts.workspaceFolderName ? `
+             <div class="status-item workspace-indicator" title="Active workspace folder">
+               <span class="workspace-name">${escapeHtml(opts.workspaceFolderName)}</span>
+             </div>
+           ` : ''}
            <div class="status-item mode-selector-wrapper">
               <button id="mode-trigger" class="mode-trigger">
                 <span>${getModeLabel(conversation?.mode || 'default')}</span>

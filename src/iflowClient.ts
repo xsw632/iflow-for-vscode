@@ -79,6 +79,8 @@ interface RunOptions {
   workspaceFiles?: string[];
   sessionId?: string;
   ideContext?: IDEContext;
+  cwd?: string;
+  fileAllowedDirs?: string[];
 }
 
 export class IFlowClient {
@@ -88,6 +90,8 @@ export class IFlowClient {
   private isCancelled = false;
   /** The conversation mode for which the current connection was established. */
   private connectedMode: ConversationMode | null = null;
+  /** The cwd for which the current connection was established. */
+  private connectedCwd: string | null = null;
   /** The session ID currently loaded on the persistent connection. */
   private loadedSessionId: string | null = null;
   /** Cached manualStart info to avoid re-resolving on every run. */
@@ -95,8 +99,7 @@ export class IFlowClient {
   private chunkMapper = new ChunkMapper(getSDK, (msg) => this.log(msg));
   private processManager = new ProcessManager(
     (msg) => this.log(msg),
-    (msg) => this.logInfo(msg),
-    () => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+    (msg) => this.logInfo(msg)
   );
   // Pending permission requests: requestId -> resolve callback
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -235,15 +238,24 @@ export class IFlowClient {
     }
   }
 
-  private getSDKOptions(manualStart: ManualStartInfo | null): Record<string, unknown> {
+  private getSDKOptions(
+    manualStart: ManualStartInfo | null,
+    cwd?: string,
+    fileAllowedDirs?: string[]
+  ): Record<string, unknown> {
     const config = this.getConfig();
+    const resolvedCwd = cwd ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 
     const options: Record<string, unknown> = {
       timeout: config.timeout,
       logLevel: config.debugLogging ? 'DEBUG' : 'WARN',
-      cwd: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+      cwd: resolvedCwd,
       fileAccess: true,
     };
+
+    if (fileAllowedDirs && fileAllowedDirs.length > 1) {
+      options.fileAllowedDirs = fileAllowedDirs;
+    }
 
     if (manualStart) {
       // Connect to our manually started process
@@ -263,16 +275,20 @@ export class IFlowClient {
    * Reuses the existing connection when possible; reconnects only when the
    * mode changes or the previous connection was lost.
    */
-  private async ensureConnected(mode: ConversationMode): Promise<void> {
-    // Already connected with matching mode → reuse
-    if (this.isConnected && this.client && this.connectedMode === mode) {
-      this.log(`Reusing existing connection (mode=${mode})`);
+  private async ensureConnected(
+    mode: ConversationMode,
+    cwd?: string,
+    fileAllowedDirs?: string[]
+  ): Promise<void> {
+    // Already connected with matching mode and cwd → reuse
+    if (this.isConnected && this.client && this.connectedMode === mode && this.connectedCwd === (cwd ?? null)) {
+      this.log(`Reusing existing connection (mode=${mode}, cwd=${cwd})`);
       return;
     }
 
-    // Mode changed or not connected → tear down stale connection first
+    // Mode or cwd changed, or not connected → tear down stale connection first
     if (this.isConnected && this.client) {
-      this.log(`Mode changed (${this.connectedMode} → ${mode}), reconnecting`);
+      this.log(`Connection params changed (mode: ${this.connectedMode} → ${mode}, cwd: ${this.connectedCwd} → ${cwd}), reconnecting`);
       await this.disconnect();
     }
 
@@ -288,7 +304,8 @@ export class IFlowClient {
       await this.processManager.startManagedProcess(
         this.cachedManualStart.nodePath,
         this.cachedManualStart.port,
-        this.cachedManualStart.iflowScript
+        this.cachedManualStart.iflowScript,
+        cwd
       );
     }
 
@@ -301,7 +318,7 @@ export class IFlowClient {
     }
 
     const sdkOptions: Record<string, unknown> = {
-      ...this.getSDKOptions(this.cachedManualStart),
+      ...this.getSDKOptions(this.cachedManualStart, cwd, fileAllowedDirs),
       sessionSettings,
     };
 
@@ -318,9 +335,10 @@ export class IFlowClient {
 
     this.isConnected = true;
     this.connectedMode = mode;
+    this.connectedCwd = cwd ?? null;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     this.loadedSessionId = (this.client as any).sessionId ?? null;
-    this.log(`Connected to iFlow (mode=${mode}, sessionId=${this.loadedSessionId})`);
+    this.log(`Connected to iFlow (mode=${mode}, cwd=${cwd}, sessionId=${this.loadedSessionId})`);
   }
 
   async checkAvailability(): Promise<{ version: string | null; diagnostics: string }> {
@@ -420,7 +438,7 @@ export class IFlowClient {
 
     try {
       // Establish or reuse a persistent connection
-      await this.ensureConnected(options.mode);
+      await this.ensureConnected(options.mode, options.cwd, options.fileAllowedDirs);
 
       // Drain any stale messages from a previous run
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -520,6 +538,7 @@ export class IFlowClient {
     this.isConnected = false;
     this.client = null;
     this.connectedMode = null;
+    this.connectedCwd = null;
     this.loadedSessionId = null;
   }
 

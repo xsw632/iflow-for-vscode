@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { ConversationStore } from './store';
 import { IFlowClient } from './iflowClient';
-import { WebviewMessage, ExtensionMessage, AttachedFile, IDEContext } from './protocol';
+import { WebviewMessage, ExtensionMessage, AttachedFile, IDEContext, Conversation } from './protocol';
 
 interface CliAvailabilityResult {
   version: string | null;
@@ -88,6 +88,13 @@ export class WebviewHandler {
       }, WebviewHandler.SELECTION_DEBOUNCE_MS);
     });
     this.disposables.push(selectionDisposable);
+
+    // Initialize workspace folders and track changes
+    this.syncWorkspaceFolders();
+    const workspaceFolderDisposable = vscode.workspace.onDidChangeWorkspaceFolders(() => {
+      this.syncWorkspaceFolders();
+    });
+    this.disposables.push(workspaceFolderDisposable);
   }
 
   getStore(): ConversationStore {
@@ -99,6 +106,7 @@ export class WebviewHandler {
       case 'ready':
         // Always send current state immediately - no CLI check on startup.
         // CLI availability is checked lazily when user sends a message.
+        this.syncWorkspaceFolders();
         this.postMessage({ type: 'stateUpdated', state: this.store.getState() });
         this.pushIDEContext();
         break;
@@ -127,9 +135,14 @@ export class WebviewHandler {
         await this.handleOpenFile(message.path);
         break;
 
-      case 'newConversation':
-        this.store.newConversation();
+      case 'newConversation': {
+        const activeUri = vscode.window.activeTextEditor?.document.uri;
+        const folder = activeUri?.scheme === 'file'
+          ? vscode.workspace.getWorkspaceFolder(activeUri)
+          : undefined;
+        this.store.newConversation(folder?.uri.fsPath);
         break;
+      }
 
       case 'switchConversation':
         this.store.switchConversation(message.conversationId);
@@ -153,6 +166,10 @@ export class WebviewHandler {
 
       case 'setModel':
         this.store.setModel(message.model);
+        break;
+
+      case 'setWorkspaceFolder':
+        this.store.setConversationWorkspaceFolder(message.uri);
         break;
 
       case 'sendMessage':
@@ -330,7 +347,7 @@ export class WebviewHandler {
     }
   }
 
-  private async getWorkspaceFileList(): Promise<string[]> {
+  private async getWorkspaceFileList(cwd?: string): Promise<string[]> {
     const workspaceFolders = vscode.workspace.workspaceFolders;
     if (!workspaceFolders) {
       return [];
@@ -339,7 +356,19 @@ export class WebviewHandler {
     const excludePattern = '**/node_modules/**,**/.git/**,**/dist/**,**/out/**';
     const files = await vscode.workspace.findFiles('**/*', excludePattern, 200);
 
-    const rootPath = workspaceFolders[0].uri.fsPath;
+    const rootPath = cwd ?? workspaceFolders[0].uri.fsPath;
+
+    // In multi-root, prefix files from non-active folders with folder name
+    if (workspaceFolders.length > 1) {
+      return files.map(f => {
+        const folder = vscode.workspace.getWorkspaceFolder(f);
+        if (folder && folder.uri.fsPath === rootPath) {
+          return path.relative(rootPath, f.fsPath);
+        }
+        return `[${folder?.name ?? 'unknown'}] ${path.relative(folder?.uri.fsPath ?? '', f.fsPath)}`;
+      });
+    }
+
     return files.map(f => path.relative(rootPath, f.fsPath));
   }
 
@@ -374,7 +403,14 @@ export class WebviewHandler {
     const conversation = this.store.getCurrentConversation();
     if (!conversation) return;
 
-    const workspaceFiles = await this.getWorkspaceFileList();
+    // Resolve workspace folder for this conversation
+    const cwd = this.resolveWorkspaceFolder(conversation);
+    if (cwd && !conversation.workspaceFolderUri) {
+      this.store.setConversationWorkspaceFolder(cwd);
+    }
+    const fileAllowedDirs = this.getAllWorkspaceFolderPaths();
+
+    const workspaceFiles = await this.getWorkspaceFileList(cwd);
 
     // Track whether the AI called exit_plan_mode during this run
     let planApprovalEmitted = false;
@@ -391,7 +427,9 @@ export class WebviewHandler {
         model: conversation.model,
         workspaceFiles,
         sessionId: conversation.sessionId,
-        ideContext
+        ideContext,
+        cwd,
+        fileAllowedDirs
       },
       (chunk) => {
         if (chunk.chunkType === 'plan_approval') {
@@ -462,6 +500,45 @@ export class WebviewHandler {
         await this.handleSendMessage(feedback, []);
       }
     }
+  }
+
+  private syncWorkspaceFolders(): void {
+    const folders = (vscode.workspace.workspaceFolders ?? []).map(f => ({
+      uri: f.uri.fsPath,
+      name: f.name,
+    }));
+    this.store.setWorkspaceFolders(folders);
+  }
+
+  private resolveWorkspaceFolder(conversation: Conversation): string | undefined {
+    const allFolders = vscode.workspace.workspaceFolders;
+    if (!allFolders || allFolders.length === 0) {
+      return undefined;
+    }
+
+    // Priority 1: Conversation's explicit workspace folder (if still valid)
+    if (conversation.workspaceFolderUri) {
+      const stillExists = allFolders.some(f => f.uri.fsPath === conversation.workspaceFolderUri);
+      if (stillExists) {
+        return conversation.workspaceFolderUri;
+      }
+    }
+
+    // Priority 2: Folder containing the active editor file
+    const activeEditor = vscode.window.activeTextEditor;
+    if (activeEditor && activeEditor.document.uri.scheme === 'file') {
+      const folder = vscode.workspace.getWorkspaceFolder(activeEditor.document.uri);
+      if (folder) {
+        return folder.uri.fsPath;
+      }
+    }
+
+    // Priority 3: First workspace folder
+    return allFolders[0].uri.fsPath;
+  }
+
+  private getAllWorkspaceFolderPaths(): string[] {
+    return (vscode.workspace.workspaceFolders ?? []).map(f => f.uri.fsPath);
   }
 
   private pushIDEContext(): void {

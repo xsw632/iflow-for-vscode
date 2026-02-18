@@ -27,8 +27,7 @@ export class ProcessManager {
 
   constructor(
     private log: (message: string) => void,
-    private logInfo: (message: string) => void,
-    private getCwd: () => string | undefined
+    private logInfo: (message: string) => void
   ) {}
 
   /** Whether a managed process is currently running. */
@@ -120,7 +119,7 @@ export class ProcessManager {
    * Start iFlow process manually with a specific Node path.
    * If iflowScript is provided, uses it directly; otherwise discovers it.
    */
-  async startManagedProcess(nodePath: string, port: number, iflowScript?: string): Promise<void> {
+  async startManagedProcess(nodePath: string, port: number, iflowScript?: string, cwd?: string): Promise<void> {
     if (!iflowScript) {
       const logFn = this.logInfo;
       const iflowPath = await findIFlowPathCrossPlatform(logFn);
@@ -142,7 +141,7 @@ export class ProcessManager {
       const maxBufferLines = 20;
 
       this.managedProcess = cp.spawn(nodePath, args, {
-        cwd: this.getCwd(),
+        cwd: cwd ?? process.cwd(),
         env: { ...process.env },
         stdio: ['pipe', 'pipe', 'pipe'],
       });

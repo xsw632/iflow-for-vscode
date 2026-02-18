@@ -33,7 +33,9 @@ export class ConversationStore {
       cliAvailable: true,
       cliVersion: saved?.cliVersion ?? null,
       cliDiagnostics: null,
-      isStreaming: false
+      isStreaming: false,
+      workspaceFolders: [],
+      isMultiRoot: false
     };
   }
 
@@ -57,12 +59,31 @@ export class ConversationStore {
     this.notifyChange();
   }
 
+  setWorkspaceFolders(folders: Array<{ uri: string; name: string }>): void {
+    this.state = {
+      ...this.state,
+      workspaceFolders: folders,
+      isMultiRoot: folders.length > 1,
+    };
+    this.notifyChange();
+  }
+
+  setConversationWorkspaceFolder(uri: string): void {
+    const conversation = this.getCurrentConversation();
+    if (conversation) {
+      conversation.workspaceFolderUri = uri;
+      conversation.updatedAt = Date.now();
+      this.save();
+      this.notifyChange();
+    }
+  }
+
   setStreaming(streaming: boolean): void {
     this.state.isStreaming = streaming;
     this.notifyChange();
   }
 
-  newConversation(): Conversation {
+  newConversation(workspaceFolderUri?: string): Conversation {
     const current = this.getCurrentConversation();
     const conversation: Conversation = {
       id: this.generateId(),
@@ -72,7 +93,8 @@ export class ConversationStore {
       think: current?.think ?? false,
       model: current?.model ?? MODELS[0],
       createdAt: Date.now(),
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
+      workspaceFolderUri: workspaceFolderUri ?? current?.workspaceFolderUri
     };
 
     this.state.conversations.unshift(conversation);

@@ -9,6 +9,7 @@ const SLASH_COMMANDS = [
   { command: '/mode', description: 'Change conversation mode' },
   { command: '/think', description: 'Toggle thinking mode' },
   { command: '/model', description: 'Change model' },
+  { command: '/workspace', description: 'Switch workspace folder' },
   { command: '/help', description: 'Show help' }
 ];
 
@@ -17,12 +18,14 @@ interface SlashMenuHost {
   getCurrentConversation(): Conversation | null;
   getInputElement(): HTMLTextAreaElement | null;
   onSlashMenuClosed(): void;
+  getWorkspaceFolders(): Array<{ uri: string; name: string }>;
+  isMultiRoot(): boolean;
 }
 
 export class SlashMenuController {
   private visible = false;
   private filter = '';
-  private mode: 'commands' | 'models' | 'modes' = 'commands';
+  private mode: 'commands' | 'models' | 'modes' | 'workspaces' = 'commands';
   private selectedIndex = 0;
 
   constructor(private host: SlashMenuHost) {}
@@ -204,12 +207,34 @@ export class SlashMenuController {
         }))
       ];
     }
-    // Commands mode
+    if (this.mode === 'workspaces') {
+      const folders = this.host.getWorkspaceFolders();
+      const currentUri = this.host.getCurrentConversation()?.workspaceFolderUri;
+      return [
+        { label: '←', description: 'Back to commands', value: 'back', action: 'back' },
+        ...folders.map(f => ({
+          label: f.name,
+          description: (f.uri === currentUri ? '✓ Current  ' : '') + f.uri,
+          value: f.uri,
+          action: 'selectWorkspace'
+        }))
+      ];
+    }
+    // Commands mode — hide /workspace in single-folder workspaces
     return SLASH_COMMANDS
-      .filter(c => c.command.toLowerCase().includes(this.filter.toLowerCase()))
+      .filter(c => {
+        if (c.command === '/workspace' && !this.host.isMultiRoot()) {
+          return false;
+        }
+        return c.command.toLowerCase().includes(this.filter.toLowerCase());
+      })
       .map(c => ({
         label: c.command,
-        description: c.description + (c.command === '/mode' || c.command === '/model' ? '  →' : ''),
+        description: c.description + (
+          c.command === '/mode' || c.command === '/model' || c.command === '/workspace'
+            ? '  →'
+            : ''
+        ),
         value: c.command,
         action: 'command'
       }));
@@ -232,6 +257,10 @@ export class SlashMenuController {
         break;
       case 'selectMode':
         this.host.postMessage({ type: 'setMode', mode: selected.value as ConversationMode });
+        this.close();
+        break;
+      case 'selectWorkspace':
+        this.host.postMessage({ type: 'setWorkspaceFolder', uri: selected.value });
         this.close();
         break;
       case 'command':
@@ -266,6 +295,14 @@ export class SlashMenuController {
         this.selectedIndex = 0;
         this.update();
         return;
+      case '/workspace':
+        if (this.host.isMultiRoot()) {
+          this.mode = 'workspaces';
+          this.selectedIndex = 0;
+          this.update();
+          return;
+        }
+        break;
       case '/help':
         break;
     }

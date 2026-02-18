@@ -103,6 +103,7 @@ export interface Conversation {
   createdAt: number;
   updatedAt: number;
   sessionId?: string;
+  workspaceFolderUri?: string;
 }
 
 export interface ConversationState {
@@ -113,6 +114,8 @@ export interface ConversationState {
   cliDiagnostics: string | null;
   isStreaming: boolean;
   contextUsage?: { usedTokens: number; totalTokens: number; percent: number };
+  workspaceFolders: Array<{ uri: string; name: string }>;
+  isMultiRoot: boolean;
 }
 
 // Messages from webview to extension
@@ -128,6 +131,7 @@ export type WebviewMessage =
   | { type: 'setMode'; mode: ConversationMode }
   | { type: 'setThink'; enabled: boolean }
   | { type: 'setModel'; model: ModelType }
+  | { type: 'setWorkspaceFolder'; uri: string }
   | { type: 'sendMessage'; content: string; attachedFiles: AttachedFile[]; ideContext?: IDEContext }
   | { type: 'toolApproval'; requestId: number; outcome: 'allow' | 'alwaysAllow' | 'reject' }
   | { type: 'questionAnswer'; requestId: number; answers: Record<string, string | string[]> }

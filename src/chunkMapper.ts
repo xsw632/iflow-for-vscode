@@ -11,6 +11,7 @@ interface RunOptionsLike {
   attachedFiles: AttachedFile[];
   workspaceFiles?: string[];
   ideContext?: IDEContext;
+  cwd?: string;
 }
 
 export class ChunkMapper {
@@ -31,6 +32,10 @@ export class ChunkMapper {
   /** Build the final prompt string with workspace and attached file context. */
   buildPrompt(options: RunOptionsLike): string {
     let prompt = '';
+
+    if (options.cwd) {
+      prompt += `=== Working Directory ===\n${options.cwd}\n=== End Working Directory ===\n\n`;
+    }
 
     if (options.workspaceFiles && options.workspaceFiles.length > 0) {
       prompt += '=== Workspace Files ===\n';

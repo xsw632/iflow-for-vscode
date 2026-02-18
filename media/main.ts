@@ -79,7 +79,9 @@ class IFlowApp implements AppHost {
       onSlashMenuClosed: () => {
         this.clearInputOnNextRender = true;
         this.render();
-      }
+      },
+      getWorkspaceFolders: () => this.state?.workspaceFolders ?? [],
+      isMultiRoot: () => this.state?.isMultiRoot ?? false
     });
     this.setupMessageHandler();
     this.setupDocumentClickHandler();
@@ -104,6 +106,15 @@ class IFlowApp implements AppHost {
   getCurrentConversation(): Conversation | null {
     if (!this.state?.currentConversationId) return null;
     return this.state.conversations.find(c => c.id === this.state?.currentConversationId) || null;
+  }
+
+  private getWorkspaceFolderName(conversation: Conversation | null): string | undefined {
+    if (!conversation?.workspaceFolderUri || !this.state?.workspaceFolders) {
+      return undefined;
+    }
+    return this.state.workspaceFolders.find(
+      f => f.uri === conversation.workspaceFolderUri
+    )?.name;
   }
 
   getPendingConfirmation(): PendingConfirmation | null {
@@ -363,7 +374,9 @@ class IFlowApp implements AppHost {
           slashMenuHtml: this.slashMenu.isVisible ? this.slashMenu.renderHtml() : '',
           mentionMenuHtml: this.inputCtrl.isMentionVisible ? this.inputCtrl.renderMentionMenuHtml() : '',
           contextUsage: this.state?.contextUsage,
-          showModeMenu: this.showModeMenu
+          showModeMenu: this.showModeMenu,
+          workspaceFolderName: this.getWorkspaceFolderName(conversation),
+          isMultiRoot: this.state?.isMultiRoot ?? false
         })}
       </div>
     `;
