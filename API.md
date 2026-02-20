@@ -308,6 +308,7 @@ async function* queryStream(
   logLevel: 'DEBUG' | 'WARN',   // 取决于 iflow.debugLogging
   cwd: workspaceFolderPath,
   fileAccess: true,
+  fileAllowedDirs: [...allWorkspaceFolders], // 多工作区时传入
 
   // 手动启动模式
   autoStartProcess: false,
@@ -319,7 +320,7 @@ async function* queryStream(
 
   // 会话级设置
   sessionSettings: {
-    permission_mode: 'default' | 'plan',
+    permission_mode: 'default' | 'yolo' | 'plan' | 'smart',
     append_system_prompt: PLAN_MODE_INSTRUCTIONS  // 仅 plan 模式
   }
 }
@@ -329,7 +330,7 @@ async function* queryStream(
 
 ## 5. 连接生命周期
 
-SDK 内部连接流程：
+SDK 内部连接流程（通过 `ensureConnected()` 管理，跨 run() 复用）：
 
 ```
 connect()
@@ -477,8 +478,8 @@ connect()
 | 方法 | 说明 |
 |------|------|
 | `checkAvailability()` | 创建临时 SDK 客户端，connect+disconnect 测试可用性，返回版本和诊断信息 |
-| `run(options, onChunk, onEnd, onError)` | 完整对话轮次：连接 → 发送 → 接收流 → 断开。返回 `sessionId` |
-| `cancel()` | 设置取消标志 + 断开连接 |
+| `run(options, onChunk, onEnd, onError)` | 完整对话轮次：确保连接 → 发送 → 接收流。返回 `sessionId` |
+| `cancel()` | 发送 interrupt() 中断当前任务（不断开连接） |
 | `dispose()` | 完全清理：断开 + 停止子进程 + 清除缓存 |
 | `isRunning()` | 检查连接状态 |
 | `approveToolCall(requestId, outcome)` | 批准工具权限请求 |
@@ -487,31 +488,59 @@ connect()
 | `approvePlan(requestId, approved)` | 审批计划 |
 | `clearAutoDetectCache()` | 清除 CLI 路径自动检测缓存 |
 
+#### 持久连接模式
+
+iflowClient 使用 `ensureConnected(mode, cwd, fileAllowedDirs)` 在多次 `run()` 调用间复用 SDK 连接。仅在以下情况重新连接：
+- mode 变化（如 plan → default）
+- cwd 变化（多工作区切换）
+- 前一连接已断开或出错
+
+连接建立时安装的三个 monkey-patch（patchTransport、patchQuestions、patchPermission）均为正交的，无论 mode 如何都会安装。
+
+#### RunOptions
+
+```typescript
+interface RunOptions {
+  prompt: string;
+  attachedFiles: AttachedFile[];
+  mode: ConversationMode;   // 'default' | 'yolo' | 'plan' | 'smart'
+  think: boolean;
+  model: ModelType;
+  workspaceFiles?: string[];
+  sessionId?: string;
+  ideContext?: IDEContext;
+  cwd?: string;
+  fileAllowedDirs?: string[];
+}
+```
+
 #### run() 完整流程
 
 ```
 1. chunkMapper.reset()
 2. updateIFlowCliModel(model)         ← 写入 ~/.iflow/settings.json
 3. updateIFlowCliApiConfig()          ← 写入 baseUrl/apiKey 到 settings.json
-4. processManager.resolveStartMode()  ← 三层解析
-5. 如需手动启动 → startManagedProcess()
-6. new sdk.IFlowClient(sdkOptions)
-7. client.connect()
-8. patchTransport(client)             ← 修复消息丢失
-9. plan 模式 → patchQuestions(client) ← 拦截问题/计划
-   default 模式 → patchPermission(client) ← 拦截权限请求
-10. client.loadSession(sessionId)     ← 恢复上下文（如有）
-11. sendSetThink(client, sessionId, think) ← 启用/禁用思考
-12. chunkMapper.buildPrompt(options)  ← 构建完整提示词
-13. plan 模式 → 注入 <system-reminder> 包装
-14. client.sendMessage(finalPrompt)
-15. for await (message of client.receiveMessages()):
+4. ensureConnected(mode, cwd, fileAllowedDirs):
+   a. 若已连接且 mode/cwd 未变 → 复用现有连接
+   b. 否则 → disconnect() + resolveStartMode() + startManagedProcess()
+   c. new sdk.IFlowClient(sdkOptions)
+   d. client.connect()
+   e. patchTransport(client)             ← 修复消息丢失
+   f. patchQuestions(client)             ← 拦截问题/计划（所有模式）
+   g. patchPermission(client)            ← 拦截权限请求（所有模式）
+5. 清空 messageQueue 中的陈旧消息
+6. client.loadSession(sessionId)     ← 恢复上下文（仅当 sessionId 与已加载不同）
+7. sendSetThink(client, sessionId, think) ← 启用/禁用思考
+8. chunkMapper.buildPrompt(options)  ← 构建完整提示词
+9. plan 模式 → 注入 <system-reminder> 包装
+10. client.sendMessage(finalPrompt)
+11. for await (message of client.receiveMessages()):
       chunkMapper.mapMessageToChunks(message) → StreamChunk[]
       onChunk(chunk) × N
       break on TASK_FINISH
-16. onEnd()
-17. finally: disconnect()
-18. return sessionId
+12. onEnd()
+13. 出错时标记 isConnected=false（下次 run 重连）
+14. return sessionId
 ```
 
 ### 7.2 设置文件旁路
@@ -555,7 +584,7 @@ transport.receiveRawData() → queue.shift() / new Promise(waiter)
 
 **问题**：ACP 协议发送 `_iflow/user/questions` 和 `_iflow/plan/exit` JSON-RPC 方法，但 SDK 的 `handleUnknownMessage()` 会返回 -32601 错误导致服务端断开。
 
-**修复**：替换 `protocol.handleClientMessage`，拦截两个方法：
+**修复**：替换 `protocol.handleClientMessage`，拦截两个方法（所有模式均安装）：
 
 | JSON-RPC 方法 | 处理方式 |
 |---------------|---------|
@@ -566,7 +595,7 @@ transport.receiveRawData() → queue.shift() / new Promise(waiter)
 
 **问题**：SDK 的 `Protocol.handleRequestPermission()` 在 AUTO 模式下自动批准、MANUAL 模式下自动拒绝，不提供交互式 UI。
 
-**修复**：替换 `protocol.handleRequestPermission`：
+**修复**：替换 `protocol.handleRequestPermission`（所有模式均安装）：
 1. 注入确认消息到 messageQueue（`confirmation: { type, description }`）
 2. 通过 `pendingPermissions` Map 阻塞等待用户决定
 3. 用户调用 `approveToolCall()` / `rejectToolCall()` → 解析 Promise
@@ -682,17 +711,57 @@ cp.spawn(nodePath, [iflowScript, '--experimental-acp', '--port', N], { cwd })
 
 | WebviewMessage.type | 处理方法 | SDK 交互 |
 |---------------------|---------|----------|
-| `ready` | 发送当前状态 | 无 |
+| `ready` | 发送当前状态 + 推送 IDE 上下文 | 无 |
 | `recheckCli` | `client.dispose()` + `clearAutoDetectCache()` + 重新检测 | 完全重启 |
+| `pickFiles` | 打开文件选择器，返回选中文件路径 | 无 |
+| `listWorkspaceFiles` | 搜索工作区文件（`vscode.workspace.findFiles`） | 无 |
+| `readFiles` | 读取文件内容（截断到 maxFileBytes） | 无 |
+| `openFile` | `vscode.commands.executeCommand('vscode.open')` | 无 |
 | `sendMessage` | `handleSendMessage()` | `client.run()` |
-| `toolApproval` (reject) | `client.rejectToolCall()` + `client.cancel()` | 拒绝 + 终止 |
+| `toolApproval` (reject) | `client.rejectToolCall()` + `client.cancel()` | 拒绝 + 中断 |
 | `toolApproval` (allow/alwaysAllow) | `client.approveToolCall(requestId, outcome)` | 解析权限 Promise |
 | `questionAnswer` | `client.answerQuestions(requestId, answers)` | 解析问题 Promise |
-| `planApproval` | `client.approvePlan(requestId, approved)` | 解析计划 Promise |
-| `cancelCurrent` | `client.cancel()` | 取消 + 断开 |
+| `planApproval` | 根据 option 执行不同逻辑（见下方） | 解析计划 Promise |
+| `cancelCurrent` | `client.cancel()` | 中断（不断开连接） |
+| `newConversation` | 创建新会话（绑定活动编辑器的工作区） | 无 |
+| `switchConversation` | 切换到指定会话 | 无 |
+| `deleteConversation` | 删除会话 | 无 |
+| `clearConversation` | 清空当前会话消息 | 无 |
 | `setMode` | 仅更新 Store | 下次 run() 生效 |
 | `setThink` | 仅更新 Store | 下次 run() 生效 |
 | `setModel` | 仅更新 Store | 下次 run() 生效 |
+| `setWorkspaceFolder` | 绑定会话到指定工作区 | 下次 run() 生效 |
+
+### planApproval 选项处理
+
+| option | 行为 |
+|--------|------|
+| `smart` | 切换 mode 为 smart，自动发送执行指令 |
+| `default` | 切换 mode 为 default，自动发送执行指令 |
+| `keep` | 保持 plan 模式不变 |
+| `feedback` | 将 feedback 文本作为新消息发送（仍在 plan 模式） |
+
+当 requestId=-1 时为合成审批（AI 未调用 exit_plan_mode 而自然结束）。
+
+### IDE 上下文推送
+
+WebviewHandler 监听活动编辑器和选区变化（300ms 防抖），推送 `ideContextChanged` 消息到 Webview。选区文本截断到 5000 字符。
+
+```typescript
+interface IDEContext {
+  activeFile: { path: string; name: string } | null;
+  selection: {
+    filePath: string; fileName: string;
+    text: string; lineStart: number; lineEnd: number;
+  } | null;
+}
+```
+
+### 多工作区支持
+
+- `syncWorkspaceFolders()`：同步所有工作区文件夹到 Store
+- `resolveWorkspaceFolder(conversation)`：优先级为会话绑定 > 活动编辑器 > 第一个文件夹
+- `getAllWorkspaceFolderPaths()`：返回所有工作区路径作为 `fileAllowedDirs`
 
 ### CLI 可用性缓存
 
@@ -791,9 +860,10 @@ ACP 路径与 CLI 内部路径存在以下差异，本项目通过补偿机制�
 | Thinking 开关 | CLI 内部设置 | ACP 无对应选项 | 手动发送 `session/set_think` JSON-RPC 消息 |
 | 模型选择 | CLI 读取 settings.json | SDK 选项无模型字段 | 直接写入 `~/.iflow/settings.json` 的 `modelName` |
 | API 配置 | CLI 读取 settings.json | SDK 选项无 baseUrl/apiKey | 直接写入 `~/.iflow/settings.json` 的 `baseUrl`/`apiKey` |
-| 权限审批 | 终端交互式 UI | SDK 自动批准/拒绝 | `patchPermission()` 替换处理器，转发到 Webview UI |
-| 用户问题 | 终端交互式 UI | SDK 返回 -32601 错误 | `patchQuestions()` 拦截方法，转发到 Webview UI |
+| 权限审批 | 终端交互式 UI | SDK 自动批准/拒绝 | `patchPermission()` 替换处理器，转发到 Webview UI（所有模式均安装） |
+| 用户问题 | 终端交互式 UI | SDK 返回 -32601 错误 | `patchQuestions()` 拦截方法，转发到 Webview UI（所有模式均安装） |
 | 消息丢失 | 不适用 | SDK Transport 一次性监听器导致 TCP 批量消息丢失 | `patchTransport()` 安装持久监听器 + 缓冲队列 |
+| 连接管理 | 每次操作独立 | SDK 无会话复用 | `ensureConnected()` 跨 run() 复用连接，仅在 mode/cwd 变化时重连 |
 
 ---
 
