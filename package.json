@@ -3,7 +3,7 @@
   "publisher": "YauMike",
   "displayName": "IFlow for VS Code",
   "description": "Bring IFlow (iflow CLI) into VS Code: chat panel, commands, and editor-group lock.",
-  "version": "0.0.11",
+  "version": "0.0.12",
   "repository": "https://github.com/xsw632/iflow-for-vscode.git",
   "homepage": "https://github.com/xsw632/iflow-for-vscode",
   "bugs": {

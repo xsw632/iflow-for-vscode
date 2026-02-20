@@ -10,6 +10,7 @@ const SLASH_COMMANDS = [
   { command: '/think', description: 'Toggle thinking mode' },
   { command: '/model', description: 'Change model' },
   { command: '/workspace', description: 'Switch workspace folder' },
+  { command: '/auth', description: 'Login with iFlow account' },
   { command: '/help', description: 'Show help' }
 ];
 
@@ -304,6 +305,9 @@ export class SlashMenuController {
         }
         break;
       case '/help':
+        break;
+      case '/auth':
+        this.host.postMessage({ type: 'startAuth' });
         break;
     }
     this.close();

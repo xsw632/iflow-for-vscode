@@ -223,12 +223,15 @@ export class IFlowClient {
       this.log(`Updated ~/.iflow/settings.json baseUrl to: ${config.baseUrl}`);
     }
 
-    // Also update apiKey if available (may be stored in separate config key)
-    const apiKey = vscode.workspace.getConfiguration('iflow').get<string | null>('apiKey', null);
-    if (apiKey && settings.apiKey !== apiKey) {
-      settings.apiKey = apiKey;
-      updated = true;
-      this.log(`Updated ~/.iflow/settings.json apiKey`);
+    // Only override apiKey from VS Code config if not using OAuth authentication.
+    // When OAuth is active, the apiKey in settings.json is managed by AuthService.
+    if (settings.selectedAuthType !== 'oauth-iflow') {
+      const apiKey = vscode.workspace.getConfiguration('iflow').get<string | null>('apiKey', null);
+      if (apiKey && settings.apiKey !== apiKey) {
+        settings.apiKey = apiKey;
+        updated = true;
+        this.log(`Updated ~/.iflow/settings.json apiKey`);
+      }
     }
 
     if (updated) {

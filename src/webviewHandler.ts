@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { ConversationStore } from './store';
 import { IFlowClient } from './iflowClient';
+import { AuthService } from './authService';
 import { WebviewMessage, ExtensionMessage, AttachedFile, IDEContext, Conversation } from './protocol';
 
 interface CliAvailabilityResult {
@@ -22,6 +23,7 @@ export class WebviewHandler {
 
   private readonly store: ConversationStore;
   private readonly client: IFlowClient;
+  private readonly authService: AuthService;
   private readonly extensionUri: vscode.Uri;
   private webview: vscode.Webview | null = null;
   private disposables: vscode.Disposable[] = [];
@@ -35,6 +37,7 @@ export class WebviewHandler {
   constructor(extensionUri: vscode.Uri, globalState: vscode.Memento) {
     this.extensionUri = extensionUri;
     this.client = new IFlowClient();
+    this.authService = new AuthService();
     this.store = new ConversationStore(globalState, (state) => {
       this.postMessage({ type: 'stateUpdated', state });
     });
@@ -219,6 +222,10 @@ export class WebviewHandler {
         this.store.setStreaming(false);
         this.store.endAssistantMessage();
         break;
+
+      case 'startAuth':
+        await this.handleStartAuth();
+        break;
     }
   }
 
@@ -270,6 +277,16 @@ export class WebviewHandler {
   private async checkCliAvailability(forceRefresh = false): Promise<void> {
     const result = await this.getSharedCliAvailability(forceRefresh);
     this.store.setCliStatus(result.version !== null, result.version, result.diagnostics);
+  }
+
+  private async handleStartAuth(): Promise<void> {
+    try {
+      await this.authService.startLogin();
+      vscode.window.showInformationMessage('iFlow: Login successful');
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      vscode.window.showErrorMessage(`iFlow login failed: ${msg}`);
+    }
   }
 
   private async handlePickFiles(): Promise<void> {
@@ -399,6 +416,9 @@ export class WebviewHandler {
         return;
       }
     }
+
+    // Refresh OAuth token if near expiry (non-blocking: if not logged in, skip)
+    await this.authService.ensureValidToken();
 
     const conversation = this.store.getCurrentConversation();
     if (!conversation) return;
@@ -625,6 +645,7 @@ export class WebviewHandler {
     }
     this.disposeListeners();
     await this.client.dispose();
+    this.authService.dispose();
     this.webview = null;
   }
 }

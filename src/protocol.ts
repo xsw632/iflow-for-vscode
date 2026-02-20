@@ -138,6 +138,7 @@ export type WebviewMessage =
   | { type: 'planApproval'; requestId: number; option: 'smart' | 'default' | 'keep' | 'feedback'; feedback?: string }
   | { type: 'cancelCurrent' }
   | { type: 'recheckCli' }
+  | { type: 'startAuth' }
   | { type: 'ready' };
 
 // Messages from extension to webview
