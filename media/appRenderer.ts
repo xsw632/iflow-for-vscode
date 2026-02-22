@@ -52,7 +52,7 @@ function formatTime(timestamp: number): string {
   return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-function getModeLabel(mode: ConversationMode): string {
+export function getModeLabel(mode: ConversationMode): string {
   switch (mode) {
     case 'default': return 'Chat';
     case 'yolo': return 'YOLO';

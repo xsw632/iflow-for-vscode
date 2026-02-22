@@ -20,6 +20,7 @@ import {
   renderBlock,
   renderPendingIndicator,
   renderIDEContextChips,
+  getModeLabel,
 } from './appRenderer';
 import type { PendingConfirmation, PendingQuestion, PendingPlanApproval } from './appRenderer';
 import {
@@ -475,6 +476,9 @@ class IFlowApp implements AppHost {
       existingIndicator?.remove();
     }
 
+    // Incrementally update composer status bar (mode label, thinking chip, model)
+    this.updateComposerStatusBar();
+
     this.scrollToBottom();
   }
 
@@ -494,6 +498,58 @@ class IFlowApp implements AppHost {
     }
     attachIDEContextListeners(this);
     this.syncMessagesBottomInset();
+  }
+
+  /**
+   * Incrementally patch composer status bar elements (mode label, thinking chip,
+   * model select, mode popup active states) without a full DOM rebuild.
+   * Existing event listeners remain intact since we only mutate text/attributes.
+   */
+  private updateComposerStatusBar(): void {
+    const conversation = this.getCurrentConversation();
+    const mode = conversation?.mode || 'default';
+    const isThinking = conversation?.think ?? false;
+    const currentModel = conversation?.model ?? 'GLM-4.7';
+
+    // 1. Update mode trigger label
+    const modeTrigger = document.getElementById('mode-trigger');
+    if (modeTrigger) {
+      const labelSpan = modeTrigger.querySelector('span:first-child');
+      if (labelSpan) {
+        labelSpan.textContent = getModeLabel(mode);
+      }
+    }
+
+    // 2. Update mode popup active states
+    document.querySelectorAll('.mode-option[data-mode]').forEach(el => {
+      const optionMode = (el as HTMLElement).dataset.mode;
+      el.classList.toggle('active', optionMode === mode);
+    });
+
+    // 3. Update thinking toggle switch
+    const toggleSwitch = document.querySelector('#think-option .toggle-switch');
+    if (toggleSwitch) {
+      toggleSwitch.classList.toggle('active', isThinking);
+    }
+
+    // 4. Update thinking chip (add/remove)
+    const statusLeft = document.querySelector('.status-left');
+    const existingChip = document.querySelector('.thinking-chip');
+    if (isThinking && !existingChip && statusLeft) {
+      const modelItem = document.getElementById('model-select')?.closest('.status-item');
+      if (modelItem) {
+        modelItem.insertAdjacentHTML('beforebegin', '<span class="thinking-chip">🧠 Thinking</span>');
+      }
+    } else if (!isThinking && existingChip) {
+      existingChip.remove();
+    }
+
+    // 5. Update model select value
+    const modelSelect = document.getElementById('model-select') as HTMLSelectElement | null;
+    if (modelSelect && modelSelect.value !== currentModel) {
+      modelSelect.value = currentModel;
+      this.autoSizeSelect(modelSelect);
+    }
   }
 
   // ── Layout helpers ─────────────────────────────────────────────────
@@ -548,12 +604,9 @@ class IFlowApp implements AppHost {
   }
 }
 
-// Initialize app when DOM is ready
-document.addEventListener('DOMContentLoaded', () => {
-  new IFlowApp();
-});
-
-// Also initialize immediately if DOM is already loaded
-if (document.readyState !== 'loading') {
+// Initialize app when DOM is ready (guard against double init)
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => new IFlowApp());
+} else {
   new IFlowApp();
 }

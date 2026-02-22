@@ -138,33 +138,27 @@ export class ConversationStore {
   }
 
   setMode(mode: ConversationMode): void {
-    const conversation = this.getCurrentConversation();
-    if (conversation) {
-      conversation.mode = mode;
-      conversation.updatedAt = Date.now();
-      this.save();
-      this.notifyChange();
-    }
+    const conversation = this.getCurrentConversation() ?? this.newConversation();
+    conversation.mode = mode;
+    conversation.updatedAt = Date.now();
+    this.save();
+    this.notifyChange();
   }
 
   setThink(enabled: boolean): void {
-    const conversation = this.getCurrentConversation();
-    if (conversation) {
-      conversation.think = enabled;
-      conversation.updatedAt = Date.now();
-      this.save();
-      this.notifyChange();
-    }
+    const conversation = this.getCurrentConversation() ?? this.newConversation();
+    conversation.think = enabled;
+    conversation.updatedAt = Date.now();
+    this.save();
+    this.notifyChange();
   }
 
   setModel(model: ModelType): void {
-    const conversation = this.getCurrentConversation();
-    if (conversation) {
-      conversation.model = model;
-      conversation.updatedAt = Date.now();
-      this.save();
-      this.notifyChange();
-    }
+    const conversation = this.getCurrentConversation() ?? this.newConversation();
+    conversation.model = model;
+    conversation.updatedAt = Date.now();
+    this.save();
+    this.notifyChange();
   }
 
   setSessionId(sessionId: string): void {
