@@ -614,6 +614,8 @@ suite('SendMessagePipeline', () => {
     const streamError = messages.find((m) => m.type === 'streamError') as Extract<ExtensionMessage, { type: 'streamError' }> | undefined;
     assert.ok(streamError);
     assert.ok(streamError?.error.startsWith('[INVALID_FILES]'));
+    assert.ok(!streamError?.error.includes('[INVALID_CONTEXT]'));
+    assert.ok(!streamError?.error.includes('[INVALID_MODEL]'));
     assert.strictEqual(streamError?.error.split('\n').filter((line) => line.startsWith('Action:')).length, 1);
     assert.strictEqual(client.runCalls.length, 0);
   });
@@ -653,6 +655,7 @@ suite('SendMessagePipeline', () => {
     const streamError = messages.find((m) => m.type === 'streamError') as Extract<ExtensionMessage, { type: 'streamError' }> | undefined;
     assert.ok(streamError);
     assert.ok(streamError?.error.startsWith('[INVALID_CONTEXT]'));
+    assert.ok(!streamError?.error.includes('[INVALID_MODEL]'));
     assert.strictEqual(streamError?.error.split('\n').filter((line) => line.startsWith('Action:')).length, 1);
     assert.strictEqual(client.runCalls.length, 0);
   });
