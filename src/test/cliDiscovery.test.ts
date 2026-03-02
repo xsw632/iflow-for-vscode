@@ -329,4 +329,31 @@ suite('cliDiscovery diagnostics', () => {
     assert.ok(summary.userMessage.includes('NOT_FOUND'));
     assert.ok(summary.userMessage.includes('PATH'));
   });
+
+  test('keeps user summary normalized and free of raw OS error text', () => {
+    const diagnostics: DiscoveryAttemptDiagnostic[] = [
+      {
+        source: 'PATH_LOOKUP',
+        target: 'which iflow',
+        reasonCode: 'PERMISSION_DENIED',
+        detail: 'spawn EACCES: permission denied',
+      },
+      {
+        source: 'KNOWN_LOCATIONS',
+        target: '/usr/local/bin/iflow',
+        reasonCode: 'NOT_EXECUTABLE',
+        detail: 'X_OK check failed',
+      },
+    ];
+
+    const summary = buildDiscoveryFailureSummary(diagnostics, 'linux');
+    assert.ok(summary.userMessage.includes('Reason:'));
+    assert.match(
+      summary.userMessage,
+      /(PERMISSION_DENIED|NOT_EXECUTABLE|NOT_FOUND|COMMAND_FAILED|UNKNOWN)/,
+    );
+    assert.ok(!summary.userMessage.toLowerCase().includes('eacces'));
+    assert.ok(!summary.userMessage.toLowerCase().includes('x_ok'));
+    assert.ok(summary.userMessage.includes('Action:'));
+  });
 });

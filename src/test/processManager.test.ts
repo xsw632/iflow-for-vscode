@@ -124,6 +124,8 @@ suite('ProcessManager', () => {
     assert.ok(message.includes('port=8090'));
     assert.ok(message.includes('timeoutMs=30000'));
     assert.ok(message.includes('node=node'));
+    assert.ok(message.includes('[STARTUP_ERROR]'));
+    assert.ok(!message.includes('/Users/dev/.volta/bin/node'));
     assert.ok(message.includes('verify iflow.nodePath/config and retry'));
   });
 
@@ -140,6 +142,8 @@ suite('ProcessManager', () => {
     assert.ok(message.includes('port=8090'));
     assert.ok(message.includes('timeoutMs=30000'));
     assert.ok(message.includes('node=node'));
+    assert.ok(message.includes('[STARTUP_ERROR]'));
+    assert.ok(!message.includes('/usr/local/bin/node'));
     assert.ok(message.includes('verify iflow.nodePath/config and retry'));
   });
 
