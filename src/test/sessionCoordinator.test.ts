@@ -47,12 +47,17 @@ class FakeProtocol {
   disposed = false;
   failOnMethod: string | null = null;
   failAuthMethodId: string | null = null;
+  methodFailures = new Map<string, unknown>();
   initializeResult: { isAuthenticated?: boolean; authMethods?: Array<{ id?: string }> } = {
     isAuthenticated: false,
   };
 
   async sendRequest(method: string, params?: unknown): Promise<unknown> {
     this.requests.push({ method, params });
+
+    if (this.methodFailures.has(method)) {
+      throw this.methodFailures.get(method);
+    }
 
     if (this.failOnMethod && method === this.failOnMethod) {
       throw new Error(`forced failure on ${method}`);
@@ -777,6 +782,78 @@ suite('SessionCoordinator', () => {
       const message = getErrorMessage(error);
       assert.match(message, /\[PROTOCOL_ERROR\]/);
       assert.match(message, /forced failure on initialize/);
+      return true;
+    });
+  });
+
+  test('preserves session-not-found text for stale-session recovery while tagging', async () => {
+    const transport = new FakeTransport();
+    const protocol = new FakeProtocol();
+    protocol.methodFailures.set(
+      'session/load',
+      new Error('[JSON-RPC -32600] Invalid request (data: {"details":"Session not found: stale-1"})'),
+    );
+
+    const coordinator = new SessionCoordinator({
+      createTransport: () => transport as never,
+      createProtocol: () => protocol as never,
+      getProcessManager: () => ({
+        hasProcess: true,
+        currentPort: null,
+        stopManagedProcess: () => {},
+        resolveStartMode: async () => null,
+        startManagedProcess: async () => 8090,
+      }),
+      getConfig: <T>(_key: string, defaultValue: T) => defaultValue,
+      runtimeConfigApplier: new RuntimeConfigApplier(() => {}),
+      interactionBridge: new InteractionBridge(() => {}, (p) => p, () => {}),
+      log: () => {},
+    });
+
+    await coordinator.ensureConnected(baseRunOptions());
+    await assert.rejects(
+      coordinator.ensureConnected(
+        baseRunOptions({
+          sessionId: 'stale-1',
+        }),
+      ),
+      (error) => {
+        const message = getErrorMessage(error);
+        assert.match(message, /\[PROTOCOL_ERROR\]/);
+        assert.match(message, /Session not found: stale-1/);
+        return true;
+      },
+    );
+
+    assert.strictEqual(coordinator.connectionSnapshot.status, 'ready');
+    assert.strictEqual(transport.disconnectCalls, 0);
+  });
+
+  test('normalizes non-error protocol failures before wrapping with tags', async () => {
+    const transport = new FakeTransport();
+    const protocol = new FakeProtocol();
+    protocol.methodFailures.set('session/new', { details: 'payload invalid' });
+
+    const coordinator = new SessionCoordinator({
+      createTransport: () => transport as never,
+      createProtocol: () => protocol as never,
+      getProcessManager: () => ({
+        hasProcess: true,
+        currentPort: null,
+        stopManagedProcess: () => {},
+        resolveStartMode: async () => null,
+        startManagedProcess: async () => 8090,
+      }),
+      getConfig: <T>(_key: string, defaultValue: T) => defaultValue,
+      runtimeConfigApplier: new RuntimeConfigApplier(() => {}),
+      interactionBridge: new InteractionBridge(() => {}, (p) => p, () => {}),
+      log: () => {},
+    });
+
+    await assert.rejects(coordinator.ensureConnected(baseRunOptions()), (error) => {
+      const message = getErrorMessage(error);
+      assert.match(message, /\[PROTOCOL_ERROR\]/);
+      assert.match(message, /"details":"payload invalid"/);
       return true;
     });
   });
