@@ -40,6 +40,7 @@ interface SessionCoordinatorDependencies {
 }
 
 const EMPTY_MCP_SERVERS: readonly never[] = [];
+const AUTH_RECOVERY_ACTION = "Next step: run `iflow login` and retry.";
 
 const INITIAL_CONNECTION_SNAPSHOT: ConnectionSnapshot = {
   status: "disconnected",
@@ -191,37 +192,51 @@ export class SessionCoordinator {
     );
 
     const processManager = this.deps.getProcessManager();
-    if (!processManager.hasProcess) {
-      const startInfo = await processManager.resolveStartMode({
-        nodePath: this.deps.getConfig<string | null>("nodePath", null),
-        port: configuredPort,
-      });
+    try {
+      if (!processManager.hasProcess) {
+        const startInfo = await processManager.resolveStartMode({
+          nodePath: this.deps.getConfig<string | null>("nodePath", null),
+          port: configuredPort,
+        });
 
-      if (startInfo) {
-        acpPort = await processManager.startManagedProcess(
-          startInfo.nodePath,
-          startInfo.port,
-          startInfo.iflowScript,
-          options.cwd,
-          enableCliStream,
-        );
-      } else {
-        throw new Error(
-          "iFlow CLI not found. Please install it (npm i -g @iflow-ai/iflow-cli) or set iflow.nodePath in settings.",
-        );
+        if (startInfo) {
+          acpPort = await processManager.startManagedProcess(
+            startInfo.nodePath,
+            startInfo.port,
+            startInfo.iflowScript,
+            options.cwd,
+            enableCliStream,
+          );
+        } else {
+          throw new Error(
+            "iFlow CLI not found. Please install it (npm i -g @iflow-ai/iflow-cli) or set iflow.nodePath in settings.",
+          );
+        }
+      } else if (typeof processManager.currentPort === "number") {
+        acpPort = processManager.currentPort;
       }
-    } else if (typeof processManager.currentPort === "number") {
-      acpPort = processManager.currentPort;
+    } catch (error) {
+      throw this.toLayerTaggedError(error, "TRANSPORT_ERROR");
     }
 
-    const transport = this.deps.createTransport();
+    let transport: AcpTransport;
+    try {
+      transport = this.deps.createTransport();
+    } catch (error) {
+      throw this.toLayerTaggedError(error, "TRANSPORT_ERROR");
+    }
     this.transport = transport;
 
     transport.onClose = (error) => {
       this.handleTransportClosed(error);
     };
 
-    const protocol = this.deps.createProtocol(transport);
+    let protocol: AcpProtocol;
+    try {
+      protocol = this.deps.createProtocol(transport);
+    } catch (error) {
+      throw this.toLayerTaggedError(error, "PROTOCOL_ERROR");
+    }
     this.protocol = protocol;
 
     try {
@@ -229,7 +244,11 @@ export class SessionCoordinator {
         url: `ws://localhost:${acpPort}/acp`,
         timeout,
       };
-      await transport.connect(connectOptions);
+      try {
+        await transport.connect(connectOptions);
+      } catch (error) {
+        throw this.toLayerTaggedError(error, "TRANSPORT_ERROR");
+      }
 
       this.updateSnapshot(
         {
@@ -242,18 +261,26 @@ export class SessionCoordinator {
       this.deps.interactionBridge.registerServerHandlers(protocol);
       protocol.startReceiveLoop();
 
-      const initResult = (await protocol.sendRequest("initialize", {
-        protocolVersion: 1,
-        clientCapabilities: {
-          fs: {
-            readTextFile: true,
-            writeTextFile: true,
-          },
-        },
-      })) as {
+      let initResult: {
         isAuthenticated?: boolean;
         authMethods?: Array<{ id?: string }>;
       };
+      try {
+        initResult = (await protocol.sendRequest("initialize", {
+          protocolVersion: 1,
+          clientCapabilities: {
+            fs: {
+              readTextFile: true,
+              writeTextFile: true,
+            },
+          },
+        })) as {
+          isAuthenticated?: boolean;
+          authMethods?: Array<{ id?: string }>;
+        };
+      } catch (error) {
+        throw this.toLayerTaggedError(error, "PROTOCOL_ERROR");
+      }
 
       if (!initResult.isAuthenticated) {
         const availableMethodIds = this.extractAuthMethodIds(
@@ -280,45 +307,69 @@ export class SessionCoordinator {
 
         if (!authenticated) {
           if (lastAuthError) {
-            throw lastAuthError;
+            throw this.toLayerTaggedError(lastAuthError, "AUTH_ERROR");
           }
-          throw new Error(
-            "ACP authentication failed: no supported auth methods",
+          throw this.toLayerTaggedError(
+            new Error("ACP authentication failed: no supported auth methods"),
+            "AUTH_ERROR",
           );
         }
       }
 
       const cwd = options.cwd ?? process.cwd();
-      const sessionSettings =
-        this.deps.runtimeConfigApplier.buildSessionSettings(options);
+      let sessionSettings: ReturnType<
+        RuntimeConfigApplier["buildSessionSettings"]
+      >;
+      try {
+        sessionSettings =
+          this.deps.runtimeConfigApplier.buildSessionSettings(options);
+      } catch (error) {
+        throw this.toLayerTaggedError(error, "PROTOCOL_ERROR");
+      }
 
       let sessionId: string;
       if (options.sessionId) {
-        await protocol.sendRequest("session/load", {
-          sessionId: options.sessionId,
-          cwd,
-          mcpServers: EMPTY_MCP_SERVERS,
-          settings: sessionSettings,
-        });
+        try {
+          await protocol.sendRequest("session/load", {
+            sessionId: options.sessionId,
+            cwd,
+            mcpServers: EMPTY_MCP_SERVERS,
+            settings: sessionSettings,
+          });
+        } catch (error) {
+          throw this.toLayerTaggedError(error, "PROTOCOL_ERROR");
+        }
         sessionId = options.sessionId;
       } else {
-        const sessionResult = (await protocol.sendRequest("session/new", {
-          cwd,
-          mcpServers: EMPTY_MCP_SERVERS,
-          settings: sessionSettings,
-        })) as { sessionId?: string };
+        let sessionResult: { sessionId?: string };
+        try {
+          sessionResult = (await protocol.sendRequest("session/new", {
+            cwd,
+            mcpServers: EMPTY_MCP_SERVERS,
+            settings: sessionSettings,
+          })) as { sessionId?: string };
+        } catch (error) {
+          throw this.toLayerTaggedError(error, "PROTOCOL_ERROR");
+        }
 
         if (!sessionResult.sessionId) {
-          throw new Error("session/new did not return sessionId");
+          throw this.toLayerTaggedError(
+            new Error("session/new did not return sessionId"),
+            "PROTOCOL_ERROR",
+          );
         }
         sessionId = sessionResult.sessionId;
       }
 
-      await this.deps.runtimeConfigApplier.applySessionRuntimeSettings(
-        protocol,
-        sessionId,
-        options,
-      );
+      try {
+        await this.deps.runtimeConfigApplier.applySessionRuntimeSettings(
+          protocol,
+          sessionId,
+          options,
+        );
+      } catch (error) {
+        throw this.toLayerTaggedError(error, "PROTOCOL_ERROR");
+      }
 
       this.updateSnapshot(
         {
@@ -332,7 +383,8 @@ export class SessionCoordinator {
         "ready",
       );
     } catch (err: unknown) {
-      const message = normalizeErrorMessage(err);
+      const taggedError = this.ensureLayerTag(err, "PROTOCOL_ERROR");
+      const message = normalizeErrorMessage(taggedError);
       await this.teardownConnection(false);
       this.updateSnapshot(
         {
@@ -341,9 +393,9 @@ export class SessionCoordinator {
           lastError: message,
         },
         "error",
-        err instanceof Error ? err : new Error(message),
+        taggedError,
       );
-      throw err;
+      throw taggedError;
     }
   }
 
@@ -351,78 +403,85 @@ export class SessionCoordinator {
     options: RunOptions,
   ): Promise<void> {
     if (!this.protocol || !this.snapshot.sessionId) {
-      throw new Error("No active protocol/session for reusable connection");
+      throw this.toLayerTaggedError(
+        new Error("No active protocol/session for reusable connection"),
+        "PROTOCOL_ERROR",
+      );
     }
 
-    const cwd = options.cwd ?? process.cwd();
-    const sessionSettings =
-      this.deps.runtimeConfigApplier.buildSessionSettings(options);
-    const modeChanged =
-      this.snapshot.connectedMode !== null &&
-      this.snapshot.connectedMode !== options.mode;
+    try {
+      const cwd = options.cwd ?? process.cwd();
+      const sessionSettings =
+        this.deps.runtimeConfigApplier.buildSessionSettings(options);
+      const modeChanged =
+        this.snapshot.connectedMode !== null &&
+        this.snapshot.connectedMode !== options.mode;
 
-    if (!options.sessionId) {
-      // New conversation (no sessionId) — create a fresh server-side session
-      // to avoid inheriting plan/todo state from the previous session.
-      const sessionResult = (await this.protocol.sendRequest("session/new", {
-        cwd,
-        mcpServers: EMPTY_MCP_SERVERS,
-        settings: sessionSettings,
-      })) as { sessionId?: string };
+      if (!options.sessionId) {
+        // New conversation (no sessionId) — create a fresh server-side session
+        // to avoid inheriting plan/todo state from the previous session.
+        const sessionResult = (await this.protocol.sendRequest("session/new", {
+          cwd,
+          mcpServers: EMPTY_MCP_SERVERS,
+          settings: sessionSettings,
+        })) as { sessionId?: string };
 
-      if (!sessionResult.sessionId) {
-        throw new Error("session/new did not return sessionId");
+        if (!sessionResult.sessionId) {
+          throw new Error("session/new did not return sessionId");
+        }
+
+        this.updateSnapshot(
+          {
+            ...this.snapshot,
+            sessionId: sessionResult.sessionId,
+          },
+          "ready",
+        );
+      } else if (options.sessionId !== this.snapshot.sessionId) {
+        // Resuming a specific existing session — load it.
+        await this.protocol.sendRequest("session/load", {
+          sessionId: options.sessionId,
+          cwd,
+          mcpServers: EMPTY_MCP_SERVERS,
+          settings: sessionSettings,
+        });
+
+        this.updateSnapshot(
+          {
+            ...this.snapshot,
+            sessionId: options.sessionId,
+          },
+          "ready",
+        );
+      } else if (modeChanged) {
+        // Same session id but different mode (for example plan -> smart/default):
+        // reload session settings so mode-specific prompts (append_system_prompt)
+        // do not leak into the next run.
+        await this.protocol.sendRequest("session/load", {
+          sessionId: options.sessionId,
+          cwd,
+          mcpServers: EMPTY_MCP_SERVERS,
+          settings: sessionSettings,
+        });
       }
 
-      this.updateSnapshot(
-        {
-          ...this.snapshot,
-          sessionId: sessionResult.sessionId,
-        },
-        "ready",
+      await this.deps.runtimeConfigApplier.applySessionRuntimeSettings(
+        this.protocol,
+        this.snapshot.sessionId!,
+        options,
       );
-    } else if (options.sessionId !== this.snapshot.sessionId) {
-      // Resuming a specific existing session — load it.
-      await this.protocol.sendRequest("session/load", {
-        sessionId: options.sessionId,
-        cwd,
-        mcpServers: EMPTY_MCP_SERVERS,
-        settings: sessionSettings,
-      });
 
       this.updateSnapshot(
         {
           ...this.snapshot,
-          sessionId: options.sessionId,
+          connectedMode: options.mode,
+          lastError: null,
         },
         "ready",
       );
-    } else if (modeChanged) {
-      // Same session id but different mode (for example plan -> smart/default):
-      // reload session settings so mode-specific prompts (append_system_prompt)
-      // do not leak into the next run.
-      await this.protocol.sendRequest("session/load", {
-        sessionId: options.sessionId,
-        cwd,
-        mcpServers: EMPTY_MCP_SERVERS,
-        settings: sessionSettings,
-      });
+    } catch (error) {
+      throw this.ensureLayerTag(error, "PROTOCOL_ERROR");
     }
-
-    await this.deps.runtimeConfigApplier.applySessionRuntimeSettings(
-      this.protocol,
-      this.snapshot.sessionId!,
-      options,
-    );
-
-    this.updateSnapshot(
-      {
-        ...this.snapshot,
-        connectedMode: options.mode,
-        lastError: null,
-      },
-      "ready",
-    );
   }
 
   private extractAuthMethodIds(
@@ -478,6 +537,45 @@ export class SessionCoordinator {
     }
 
     return availableMethodIds.length > 0 ? [...availableMethodIds] : ["iflow"];
+  }
+
+  private ensureLayerTag(
+    error: unknown,
+    fallbackLayer: "TRANSPORT_ERROR" | "AUTH_ERROR" | "PROTOCOL_ERROR",
+  ): Error {
+    const message = normalizeErrorMessage(error);
+    if (this.hasKnownLayerTag(message)) {
+      return error instanceof Error ? error : new Error(message);
+    }
+    return this.toLayerTaggedError(error, fallbackLayer);
+  }
+
+  private toLayerTaggedError(
+    error: unknown,
+    layer: "TRANSPORT_ERROR" | "AUTH_ERROR" | "PROTOCOL_ERROR",
+  ): Error {
+    const normalized = normalizeErrorMessage(error);
+    const prefixed = this.hasKnownLayerTag(normalized)
+      ? normalized
+      : `[${layer}] ${normalized}`;
+    const message =
+      layer === "AUTH_ERROR" && !/iflow login/i.test(prefixed)
+        ? `${prefixed} ${AUTH_RECOVERY_ACTION}`
+        : prefixed;
+
+    if (error instanceof Error && error.message === message) {
+      return error;
+    }
+
+    if (error instanceof Error) {
+      return new Error(message, { cause: error });
+    }
+
+    return new Error(message);
+  }
+
+  private hasKnownLayerTag(message: string): boolean {
+    return /\[(TRANSPORT_ERROR|AUTH_ERROR|PROTOCOL_ERROR)\]/.test(message);
   }
 
   private handleTransportClosed(error?: Error): void {
