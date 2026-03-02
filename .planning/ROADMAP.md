@@ -13,6 +13,15 @@
 | 3 | Test Coverage | Fill coverage gaps and reach 80%+ overall | TEST-01, TEST-02, TEST-03, TEST-04 | 4 |
 | 4 | Preact Webview Rewrite | Full rewrite of webview (media/) using Preact | PREACT-01, PREACT-02, PREACT-03, PREACT-04 | 5 |
 
+## Plan Progress
+
+| Phase | Plans Complete | Latest Completed Plan | Status |
+|---|---|---|---|
+| 1 — Error Context | 2/3 | 01-02 (2026-03-02) | In Progress |
+| 2 — File Size Compliance | 0/0 | — | Pending |
+| 3 — Test Coverage | 0/0 | — | Pending |
+| 4 — Preact Webview Rewrite | 0/0 | — | Pending |
+
 ## Phase Details
 
 ### Phase 1: Error Context
