@@ -2,7 +2,14 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { deriveNodePathFromIFlow, resolveIFlowScriptCrossPlatform } from '../cliDiscovery';
+import {
+  buildDiscoveryFailureSummary,
+  categorizeDiscoverySource,
+  deriveNodePathFromIFlow,
+  normalizeDiscoveryFailureReason,
+  resolveIFlowScriptCrossPlatform,
+  type DiscoveryAttemptDiagnostic,
+} from '../cliDiscovery';
 
 suite('cliDiscovery PowerShell Parsing', () => {
   let tempDir: string;
@@ -262,5 +269,64 @@ suite('deriveNodePathFromIFlow', () => {
 
     const result = await deriveNodePathFromIFlow(iflowPath, () => {}, scriptPath);
     assert.strictEqual(result, nodePath);
+  });
+});
+
+suite('cliDiscovery diagnostics', () => {
+  test('normalizes platform-specific failures to stable reason codes', () => {
+    assert.strictEqual(
+      normalizeDiscoveryFailureReason(new Error('EACCES: permission denied')),
+      'PERMISSION_DENIED',
+    );
+    assert.strictEqual(
+      normalizeDiscoveryFailureReason(new Error('ENOENT: not found')),
+      'NOT_FOUND',
+    );
+    assert.strictEqual(
+      normalizeDiscoveryFailureReason(new Error('spawn EPERM')),
+      'PERMISSION_DENIED',
+    );
+  });
+
+  test('categorizes diagnostics by source bucket', () => {
+    assert.strictEqual(
+      categorizeDiscoverySource('which iflow'),
+      'PATH_LOOKUP',
+    );
+    assert.strictEqual(
+      categorizeDiscoverySource('/usr/local/bin/iflow'),
+      'KNOWN_LOCATIONS',
+    );
+    assert.strictEqual(
+      categorizeDiscoverySource('/Users/demo/.nvm/versions/node/v22/bin/iflow'),
+      'VERSION_MANAGER_SCAN',
+    );
+  });
+
+  test('builds concise summary with attempts, top reason, and action', () => {
+    const diagnostics: DiscoveryAttemptDiagnostic[] = [
+      {
+        source: 'PATH_LOOKUP',
+        target: 'which iflow',
+        reasonCode: 'NOT_FOUND',
+      },
+      {
+        source: 'KNOWN_LOCATIONS',
+        target: '/usr/local/bin/iflow',
+        reasonCode: 'NOT_FOUND',
+      },
+      {
+        source: 'VERSION_MANAGER_SCAN',
+        target: '/Users/demo/.nvm/versions/node/v22/bin/iflow',
+        reasonCode: 'NOT_EXECUTABLE',
+      },
+    ];
+
+    const summary = buildDiscoveryFailureSummary(diagnostics, 'linux');
+    assert.strictEqual(summary.attemptCount, 3);
+    assert.strictEqual(summary.primaryReason, 'NOT_FOUND');
+    assert.ok(summary.userMessage.includes('3 attempt(s)'));
+    assert.ok(summary.userMessage.includes('NOT_FOUND'));
+    assert.ok(summary.userMessage.includes('PATH'));
   });
 });
