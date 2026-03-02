@@ -221,7 +221,7 @@ export class SendMessagePipeline {
     if (preflightFailure) {
       const userError = this.formatPreflightError(preflightFailure);
       this.deps.debug(
-        `Preflight validation failed: stage=${preflightFailure.stage} reason=${preflightFailure.reason}`,
+        `[preflight] stage=${preflightFailure.stage} reason=${preflightFailure.reason} runSuppressed=true`,
       );
       this.logPerf(sendStartedAt, runStartedAt, firstChunkAt, workspaceScanMs);
       this.deps.store.batchUpdate(() => {
