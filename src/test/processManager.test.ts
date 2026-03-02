@@ -1,6 +1,7 @@
 import * as assert from 'assert';
 import { EventEmitter } from 'events';
 import { ProcessManager } from '../processManager';
+import { buildStartupFailureMessage } from '../process/startupSignals';
 
 class FakeChildProcess extends EventEmitter {
   stdout = new EventEmitter();
@@ -108,6 +109,38 @@ suite('ProcessManager', () => {
       /failed to bind ACP port 8090 because it is already in use/i,
     );
     assert.strictEqual(manager.currentPort, null);
+  });
+
+  test('includes runtime context and guidance for startup failures', () => {
+    const message = buildStartupFailureMessage(
+      1,
+      ['booting...\n'],
+      ['error: startup failed\n'],
+      8090,
+      '/Users/dev/.volta/bin/node',
+      30_000,
+    );
+
+    assert.ok(message.includes('port=8090'));
+    assert.ok(message.includes('timeoutMs=30000'));
+    assert.ok(message.includes('node=node'));
+    assert.ok(message.includes('verify iflow.nodePath/config and retry'));
+  });
+
+  test('adds runtime context to port-in-use errors', () => {
+    const message = buildStartupFailureMessage(
+      1,
+      [],
+      ['Error: listen EADDRINUSE: address already in use :::8090'],
+      8090,
+      '/usr/local/bin/node',
+      30_000,
+    );
+
+    assert.ok(message.includes('port=8090'));
+    assert.ok(message.includes('timeoutMs=30000'));
+    assert.ok(message.includes('node=node'));
+    assert.ok(message.includes('verify iflow.nodePath/config and retry'));
   });
 
   test('proactively falls back to an available port when configured port is occupied', async () => {
