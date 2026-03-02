@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v0.2
 milestone_name: milestone
-status: unknown
-last_updated: "2026-03-02T13:37:46.362Z"
+status: in_progress
+last_updated: "2026-03-02T13:38:56.000Z"
 progress:
   total_phases: 1
   completed_phases: 1
@@ -13,10 +13,10 @@ progress:
 
 ## Current Position
 
-Phase: 01-error-context
-Plan: Complete (01-01, 01-02, 01-03 summaries present)
-Status: Phase 1 complete
-Last activity: 2026-03-02 — Executed 01-02 plan and wrote summary
+Phase: 02-file-size-compliance
+Plan: —
+Status: Phase 1 complete; ready to execute Phase 2 plans
+Last activity: 2026-03-02 — Executed 01-03 plan and wrote summary
 
 ## Project Reference
 
@@ -44,6 +44,7 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 - ERR-01 and ERR-04 marked complete in REQUIREMENTS.md after 01-01 execution
 - Preflight validation now fails fast in fixed order: files -> context -> model.
 - Validation failures emit stable stage tags (`INVALID_FILES`, `INVALID_CONTEXT`, `INVALID_MODEL`) with one immediate action line.
+- ACP connection failures now use deterministic lifecycle tags (`TRANSPORT_ERROR`, `AUTH_ERROR`, `PROTOCOL_ERROR`) with fallback to `PROTOCOL_ERROR`.
 
 ## Decisions
 
@@ -51,13 +52,14 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 - 2026-03-02 (01-error-context/01): Standardized startup failure messages with `[STARTUP_ERROR]`, runtime context tokens, and retry guidance.
 - 2026-03-02 (01-error-context/02): Chose deterministic fail-fast preflight validation instead of multi-error aggregation.
 - 2026-03-02 (01-error-context/02): Kept user stream errors concise and moved richer failure context to debug logs.
-- [Phase 01]: Tagged errors at lifecycle boundaries (transport/auth/protocol) to preserve stage precision.
-- [Phase 01]: Preserved normalized original error text inside tagged output to keep missing-session recovery heuristics compatible.
+- 2026-03-02 (01-error-context/03): Tagged errors at lifecycle boundaries (transport/auth/protocol) to preserve stage precision.
+- 2026-03-02 (01-error-context/03): Preserved normalized original error text inside tagged output to keep missing-session recovery heuristics compatible.
 
 ## Session Log
 
 | Date | Session | Stopped At | Resume |
 |------|---------|------------|--------|
+| 2026-03-02 | Execute 01-03 | Completed 01-error-context-03-PLAN.md | /gsd:execute-phase 02-file-size-compliance |
 | 2026-03-02 | Execute 01-02 | Completed 01-error-context-02-PLAN.md | /gsd:execute-phase 01-error-context |
 | 2026-03-02 | Execute 01-01 | Completed 01-error-context-01-PLAN.md | /gsd:execute-phase 01-error-context |
 | 2026-03-02 | Project init | Milestone v0.2.0 roadmap created | /gsd:plan-phase 1 |
