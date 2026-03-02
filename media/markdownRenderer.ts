@@ -1,10 +1,7 @@
 import { sanitizeMarkdownLinkHref } from '../src/markdownUrlPolicy';
+import { escapeHtml } from '../src/shared/escapeHtml';
 
-export function escapeHtml(text: string): string {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
+export { escapeHtml };
 
 function renderInline(text: string): string {
   return escapeHtml(text)
