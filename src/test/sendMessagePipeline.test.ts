@@ -695,4 +695,90 @@ suite('SendMessagePipeline', () => {
     assert.strictEqual(streamError?.error.split('\n').filter((line) => line.startsWith('Action:')).length, 1);
     assert.strictEqual(client.runCalls.length, 0);
   });
+
+  test('keeps streamError concise while logging rich preflight diagnostics', async () => {
+    const store = createStore();
+    store.setModel('invalid-model' as unknown as import('../protocol').ModelType);
+    const messages: ExtensionMessage[] = [];
+    const debugLogs: string[] = [];
+    const client = new FakeClient();
+
+    const pipeline = new SendMessagePipeline({
+      store,
+      client: client as unknown as import('../acpClient').AcpClient,
+      postMessage: (message) => messages.push(message),
+      markCliUnavailable: () => {},
+      resolveWorkspaceFolder: () => '/tmp/workspace',
+      getAllWorkspaceFolderPaths: () => ['/tmp/workspace'],
+      getWorkspaceFileList: async () => [],
+      shouldIncludeWorkspaceFiles: () => false,
+      getWorkspaceFilesLimit: () => 80,
+      getStreamRenderIntervalMs: () => 50,
+      planApprovalCoordinator: new PlanApprovalCoordinator(new PlanModeOrchestrator()),
+      debug: (message) => debugLogs.push(message),
+      setSessionId: (sessionId) => store.setSessionId(sessionId),
+    });
+
+    await pipeline.execute({
+      content: 'debug preflight',
+      attachedFiles: [{ path: '/tmp/workspace/main.ts' }],
+      silent: false,
+      ideContext: {
+        activeFile: { path: '/tmp/workspace/main.ts', name: 'main.ts' },
+        selection: null,
+      },
+    });
+
+    const streamError = messages.find((m) => m.type === 'streamError') as Extract<ExtensionMessage, { type: 'streamError' }> | undefined;
+    assert.ok(streamError);
+    assert.strictEqual(streamError?.error.split('\n').length, 2);
+    assert.ok(!streamError?.error.includes('reason='));
+    assert.ok(debugLogs.some((line) => line.includes('[preflight] stage=INVALID_MODEL')
+      && line.includes('reason=')
+      && line.includes('runSuppressed=true')));
+    assert.strictEqual(client.runCalls.length, 0);
+  });
+
+  test('runs finalize cleanup hooks after preflight validation failure', async () => {
+    const store = createStore();
+    store.setModel('invalid-model' as unknown as import('../protocol').ModelType);
+    const messages: ExtensionMessage[] = [];
+    const lifecycleCalls: string[] = [];
+    const client = new FakeClient();
+
+    const pipeline = new SendMessagePipeline({
+      store,
+      client: client as unknown as import('../acpClient').AcpClient,
+      postMessage: (message) => messages.push(message),
+      markCliUnavailable: () => {},
+      resolveWorkspaceFolder: () => '/tmp/workspace',
+      getAllWorkspaceFolderPaths: () => ['/tmp/workspace'],
+      getWorkspaceFileList: async () => [],
+      shouldIncludeWorkspaceFiles: () => false,
+      getWorkspaceFilesLimit: () => 80,
+      getStreamRenderIntervalMs: () => 50,
+      planApprovalCoordinator: new PlanApprovalCoordinator(new PlanModeOrchestrator()),
+      debug: () => {},
+      setSessionId: (sessionId) => store.setSessionId(sessionId),
+      onRunStart: () => lifecycleCalls.push('start'),
+      onRunFinalize: (context) => lifecycleCalls.push(context.succeeded ? 'finalize:success' : 'finalize:error'),
+    });
+
+    await pipeline.execute({
+      content: 'cleanup on preflight failure',
+      attachedFiles: [{ path: '/tmp/workspace/main.ts' }],
+      silent: false,
+      ideContext: {
+        activeFile: { path: '/tmp/workspace/main.ts', name: 'main.ts' },
+        selection: null,
+      },
+    });
+
+    const state = store.getState();
+    const streamError = messages.find((m) => m.type === 'streamError') as Extract<ExtensionMessage, { type: 'streamError' }> | undefined;
+    assert.ok(streamError);
+    assert.deepStrictEqual(lifecycleCalls, ['start', 'finalize:error']);
+    assert.strictEqual(state.isStreaming, false);
+    assert.strictEqual(client.runCalls.length, 0);
+  });
 });
