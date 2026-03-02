@@ -6,6 +6,7 @@ import {
   Conversation,
   ExtensionMessage,
   IDEContext,
+  MODELS,
   StreamChunk,
   StreamStatusPhase,
 } from "../protocol";
@@ -58,6 +59,15 @@ interface SendMessagePipelineDependencies {
   onChunk?: (chunk: StreamChunk, context: RunLifecycleContext) => void;
   onRunFinalize?: (context: RunFinalizeContext) => void;
   now?: () => number;
+}
+
+type PreflightStageCode = "INVALID_FILES" | "INVALID_CONTEXT" | "INVALID_MODEL";
+
+interface PreflightValidationFailure {
+  stage: PreflightStageCode;
+  summary: string;
+  action: string;
+  reason: string;
 }
 
 export class SendMessagePipeline {
@@ -206,6 +216,29 @@ export class SendMessagePipeline {
         this.deps.debug(messageText);
       }
     };
+
+    const preflightFailure = this.validatePreflightInput(input, conversation.model);
+    if (preflightFailure) {
+      const userError = this.formatPreflightError(preflightFailure);
+      this.deps.debug(
+        `Preflight validation failed: stage=${preflightFailure.stage} reason=${preflightFailure.reason}`,
+      );
+      this.logPerf(sendStartedAt, runStartedAt, firstChunkAt, workspaceScanMs);
+      this.deps.store.batchUpdate(() => {
+        this.deps.store.appendToAssistantMessage(
+          { chunkType: "error", message: userError },
+          { notify: false },
+        );
+        this.deps.store.endAssistantMessage();
+        this.deps.store.setStreaming(false);
+      });
+      finalizeRunHook(false);
+      this.deps.postMessage({
+        type: "streamError",
+        error: userError,
+      });
+      return [];
+    }
 
     const waitingStatusTimer = setTimeout(() => {
       if (!firstChunkSeen && !runCompleted) {
@@ -395,6 +428,99 @@ export class SendMessagePipeline {
     this.deps.debug(
       `[perf] ttft=${ttft} preflight=${preflightMs}ms total=${totalMs}ms workspaceScan=${workspaceScan}`,
     );
+  }
+
+  private validatePreflightInput(
+    input: QueuedMessage,
+    model: string,
+  ): PreflightValidationFailure | null {
+    return (
+      this.validateAttachedFiles(input.attachedFiles) ??
+      this.validateIdeContext(input.ideContext) ??
+      this.validateModel(model)
+    );
+  }
+
+  private validateAttachedFiles(
+    files: AttachedFile[],
+  ): PreflightValidationFailure | null {
+    for (const [index, file] of files.entries()) {
+      const path =
+        typeof file?.path === "string" ? file.path.trim() : undefined;
+      if (!path) {
+        return {
+          stage: "INVALID_FILES",
+          summary: "One or more attached files are invalid.",
+          action: "Reattach valid files and send again.",
+          reason: `attachedFiles[${index}].path is missing`,
+        };
+      }
+    }
+    return null;
+  }
+
+  private validateIdeContext(
+    ideContext: IDEContext | undefined,
+  ): PreflightValidationFailure | null {
+    if (!ideContext) {
+      return null;
+    }
+
+    const activeFile = ideContext.activeFile;
+    if (
+      activeFile &&
+      (!activeFile.path.trim() || !activeFile.name.trim())
+    ) {
+      return {
+        stage: "INVALID_CONTEXT",
+        summary: "IDE context is incomplete.",
+        action: "Clear IDE context and retry.",
+        reason: "activeFile path/name is empty",
+      };
+    }
+
+    const selection = ideContext.selection;
+    if (!selection) {
+      return null;
+    }
+
+    const hasTextFields =
+      selection.filePath.trim().length > 0 &&
+      selection.fileName.trim().length > 0 &&
+      selection.text.trim().length > 0;
+    const hasLineRange =
+      Number.isInteger(selection.lineStart) &&
+      Number.isInteger(selection.lineEnd) &&
+      selection.lineStart >= 1 &&
+      selection.lineEnd >= selection.lineStart;
+
+    if (!hasTextFields || !hasLineRange) {
+      return {
+        stage: "INVALID_CONTEXT",
+        summary: "IDE context is incomplete.",
+        action: "Clear IDE context and retry.",
+        reason: "selection fields are invalid",
+      };
+    }
+
+    return null;
+  }
+
+  private validateModel(model: string): PreflightValidationFailure | null {
+    if (MODELS.includes(model as (typeof MODELS)[number])) {
+      return null;
+    }
+
+    return {
+      stage: "INVALID_MODEL",
+      summary: "Selected model is not supported.",
+      action: "Choose a supported model and retry.",
+      reason: `model '${model}' is not in protocol.MODELS`,
+    };
+  }
+
+  private formatPreflightError(error: PreflightValidationFailure): string {
+    return `[${error.stage}] ${error.summary}\nAction: ${error.action}`;
   }
 
   private resolveStreamRenderIntervalMs(): number {
