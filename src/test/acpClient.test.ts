@@ -1,6 +1,10 @@
 import * as assert from "assert";
 import { AcpClient } from "../acpClient";
 import { InactivityGuard } from "../acp/inactivityGuard";
+import {
+  buildInactivityRecoveryPrompt,
+  connectWithRecovery,
+} from "../acp/client/acpRunRecovery";
 
 class FakeTransport {
   connected = false;
@@ -623,6 +627,78 @@ suite("AcpClient", () => {
             "Recovered after stuck sub-agent cancellation.",
           ),
       ),
+    );
+  });
+
+  test("connectWithRecovery only falls back to recoverMissingSession for missing session errors with sessionId", async () => {
+    const baseOptions = {
+      prompt: "hello",
+      attachedFiles: [],
+      mode: "default",
+      think: false,
+      model: "GLM-4.7" as any,
+      sessionId: "persisted-1",
+    };
+    const recoveredProtocol = {
+      sendRequest: async () => ({}),
+    } as any;
+    let recoverCalls = 0;
+
+    const recoveredOptions = await connectWithRecovery(baseOptions as any, {
+      ensureConnected: async () => {
+        throw new Error("Session not found: persisted-1");
+      },
+      isMissingSessionError: (error: unknown) =>
+        String((error as Error).message).includes("Session not found"),
+      recoverMissingSession: async () => {
+        recoverCalls += 1;
+        return {
+          protocol: recoveredProtocol,
+          sessionId: "fresh-session-2",
+        };
+      },
+      log: () => {},
+    });
+
+    assert.strictEqual(recoveredOptions.sessionId, "fresh-session-2");
+    assert.strictEqual(recoverCalls, 1);
+
+    await assert.rejects(
+      connectWithRecovery(
+        { ...baseOptions, sessionId: undefined } as any,
+        {
+          ensureConnected: async () => {
+            throw new Error("Session not found: persisted-1");
+          },
+          isMissingSessionError: (error: unknown) =>
+            String((error as Error).message).includes("Session not found"),
+          recoverMissingSession: async () => {
+            throw new Error("should not recover without sessionId");
+          },
+          log: () => {},
+        },
+      ),
+    );
+  });
+
+  test("buildInactivityRecoveryPrompt keeps stable warning and reminder tokens", () => {
+    const built = buildInactivityRecoveryPrompt(
+      {
+        name: "task",
+        title: "Launch agent(frontend-tester): Validate game",
+      },
+      30,
+    );
+
+    assert.strictEqual(built.timeoutMinutes, 0);
+    assert.ok(built.warningMessage.includes("appears stuck"));
+    assert.ok(built.reminderPrompt.includes("<system-reminder>"));
+    assert.ok(
+      built.reminderPrompt.includes("automatically cancelled"),
+      "expected recovery prompt to keep stable cancellation phrase",
+    );
+    assert.ok(
+      built.reminderPrompt.includes('sub-agent "Launch agent(frontend-tester): Validate game"'),
     );
   });
 
