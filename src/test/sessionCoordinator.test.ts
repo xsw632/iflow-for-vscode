@@ -9,9 +9,13 @@ class FakeTransport {
   connectCalls = 0;
   disconnectCalls = 0;
   lastConnectUrl: string | null = null;
+  connectFailure: unknown | null = null;
   onClose: ((error?: Error) => void) | null = null;
 
   async connect(options?: { url: string }): Promise<void> {
+    if (this.connectFailure !== null) {
+      throw this.connectFailure;
+    }
     this.connected = true;
     this.connectCalls += 1;
     this.lastConnectUrl = options?.url ?? null;
@@ -105,6 +109,13 @@ function baseRunOptions(overrides: Partial<RunOptions> = {}): RunOptions {
     cwd: '/tmp/workspace-a',
     ...overrides,
   };
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error);
 }
 
 function createProcessManagerRecorder(
@@ -677,5 +688,96 @@ suite('SessionCoordinator', () => {
       (authenticateRequests[1]?.params as { methodId?: string } | undefined)?.methodId,
       'iflow',
     );
+  });
+
+  test('tags transport failures with TRANSPORT_ERROR', async () => {
+    const transport = new FakeTransport();
+    transport.connectFailure = new Error('socket refused');
+    const protocol = new FakeProtocol();
+
+    const coordinator = new SessionCoordinator({
+      createTransport: () => transport as never,
+      createProtocol: () => protocol as never,
+      getProcessManager: () => ({
+        hasProcess: true,
+        currentPort: null,
+        stopManagedProcess: () => {},
+        resolveStartMode: async () => null,
+        startManagedProcess: async () => 8090,
+      }),
+      getConfig: <T>(_key: string, defaultValue: T) => defaultValue,
+      runtimeConfigApplier: new RuntimeConfigApplier(() => {}),
+      interactionBridge: new InteractionBridge(() => {}, (p) => p, () => {}),
+      log: () => {},
+    });
+
+    await assert.rejects(coordinator.ensureConnected(baseRunOptions()), (error) => {
+      const message = getErrorMessage(error);
+      assert.match(message, /\[TRANSPORT_ERROR\]/);
+      assert.match(message, /socket refused/);
+      return true;
+    });
+  });
+
+  test('tags authentication failures with AUTH_ERROR and recovery action', async () => {
+    const transport = new FakeTransport();
+    const protocol = new FakeProtocol();
+    protocol.initializeResult = {
+      isAuthenticated: false,
+      authMethods: [{ id: 'oauth-iflow' }],
+    };
+    protocol.failOnMethod = 'authenticate';
+
+    const coordinator = new SessionCoordinator({
+      createTransport: () => transport as never,
+      createProtocol: () => protocol as never,
+      getProcessManager: () => ({
+        hasProcess: true,
+        currentPort: null,
+        stopManagedProcess: () => {},
+        resolveStartMode: async () => null,
+        startManagedProcess: async () => 8090,
+      }),
+      getConfig: <T>(_key: string, defaultValue: T) => defaultValue,
+      runtimeConfigApplier: new RuntimeConfigApplier(() => {}),
+      interactionBridge: new InteractionBridge(() => {}, (p) => p, () => {}),
+      log: () => {},
+    });
+
+    await assert.rejects(coordinator.ensureConnected(baseRunOptions()), (error) => {
+      const message = getErrorMessage(error);
+      assert.match(message, /\[AUTH_ERROR\]/);
+      assert.match(message, /iflow login/i);
+      return true;
+    });
+  });
+
+  test('tags initialize/session lifecycle failures with PROTOCOL_ERROR', async () => {
+    const transport = new FakeTransport();
+    const protocol = new FakeProtocol();
+    protocol.failOnMethod = 'initialize';
+
+    const coordinator = new SessionCoordinator({
+      createTransport: () => transport as never,
+      createProtocol: () => protocol as never,
+      getProcessManager: () => ({
+        hasProcess: true,
+        currentPort: null,
+        stopManagedProcess: () => {},
+        resolveStartMode: async () => null,
+        startManagedProcess: async () => 8090,
+      }),
+      getConfig: <T>(_key: string, defaultValue: T) => defaultValue,
+      runtimeConfigApplier: new RuntimeConfigApplier(() => {}),
+      interactionBridge: new InteractionBridge(() => {}, (p) => p, () => {}),
+      log: () => {},
+    });
+
+    await assert.rejects(coordinator.ensureConnected(baseRunOptions()), (error) => {
+      const message = getErrorMessage(error);
+      assert.match(message, /\[PROTOCOL_ERROR\]/);
+      assert.match(message, /forced failure on initialize/);
+      return true;
+    });
   });
 });
