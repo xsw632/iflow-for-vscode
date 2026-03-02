@@ -1,3 +1,5 @@
+import * as path from "path";
+
 export function isReadySignal(output: string): boolean {
   const normalized = output.toLowerCase();
   return normalized.includes('listening')
@@ -39,16 +41,38 @@ export function buildStartupFailureMessage(
   stdoutBuffer: string[],
   stderrBuffer: string[],
   configuredPort: number,
+  nodePath: string,
+  timeoutMs: number,
 ): string {
-  const combined = `${stdoutBuffer.join('')}\n${stderrBuffer.join('')}`.toLowerCase();
-  if (combined.includes('eaddrinuse') || combined.includes('address already in use')) {
-    return `iFlow process failed to bind ACP port ${configuredPort} because it is already in use. `
-      + 'Please close the conflicting process or change iflow.port.';
+  const shortNodePath = summarizeNodePath(nodePath);
+  const runtimeContext = `port=${configuredPort}, timeoutMs=${timeoutMs}, node=${shortNodePath}`;
+  const recoveryAction = "Action: verify iflow.nodePath/config and retry.";
+  const combined = `${stdoutBuffer.join("")}\n${stderrBuffer.join("")}`.toLowerCase();
+
+  if (
+    combined.includes("eaddrinuse") ||
+    combined.includes("address already in use")
+  ) {
+    return (
+      `[STARTUP_ERROR] iFlow process failed to bind ACP port ${configuredPort} because it is already in use. ` +
+      `${runtimeContext}. ${recoveryAction}`
+    );
   }
 
-  let errorMsg = `iFlow process exited immediately with code ${code}`;
-  if (code === 1) {
-    errorMsg += '. 可能的原因：--experimental-acp 参数不被支持，请检查 CLI 版本';
+  if (code === null) {
+    return (
+      `[STARTUP_ERROR] iFlow process startup timed out before readiness was confirmed. ` +
+      `${runtimeContext}. ${recoveryAction}`
+    );
   }
-  return errorMsg;
+
+  return (
+    `[STARTUP_ERROR] iFlow process exited immediately with code ${code}. ` +
+    `${runtimeContext}. ${recoveryAction}`
+  );
+}
+
+function summarizeNodePath(nodePath: string): string {
+  const basename = path.basename(nodePath);
+  return basename || nodePath;
 }

@@ -341,7 +341,18 @@ export class ProcessManager {
 
       const timeout = setTimeout(() => {
         if (!started) {
-          settleReject(new Error("iFlow process startup timeout"));
+          settleReject(
+            new Error(
+              buildStartupFailureMessage(
+                null,
+                stdoutBuffer,
+                stderrBuffer,
+                effectivePort,
+                nodePath,
+                PROCESS_STARTUP_TIMEOUT_MS,
+              ),
+            ),
+          );
         }
       }, PROCESS_STARTUP_TIMEOUT_MS);
 
@@ -439,7 +450,9 @@ export class ProcessManager {
                 code,
                 stdoutBuffer,
                 stderrBuffer,
-                port,
+                effectivePort,
+                nodePath,
+                PROCESS_STARTUP_TIMEOUT_MS,
               ),
             ),
           );
