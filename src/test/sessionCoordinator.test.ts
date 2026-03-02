@@ -857,4 +857,39 @@ suite('SessionCoordinator', () => {
       return true;
     });
   });
+
+  test('falls back to PROTOCOL_ERROR for ambiguous lifecycle failures', async () => {
+    const transport = new FakeTransport();
+    const protocol = new FakeProtocol();
+    protocol.initializeResult = {
+      isAuthenticated: false,
+      authMethods: [{ id: 'iflow' }],
+    };
+
+    const coordinator = new SessionCoordinator({
+      createTransport: () => transport as never,
+      createProtocol: () => protocol as never,
+      getProcessManager: () => ({
+        hasProcess: true,
+        currentPort: null,
+        stopManagedProcess: () => {},
+        resolveStartMode: async () => null,
+        startManagedProcess: async () => 8090,
+      }),
+      getConfig: <T>(_key: string, defaultValue: T) => defaultValue,
+      resolveAuthMethodOrder: () => {
+        throw new Error('preference resolver failed unexpectedly');
+      },
+      runtimeConfigApplier: new RuntimeConfigApplier(() => {}),
+      interactionBridge: new InteractionBridge(() => {}, (p) => p, () => {}),
+      log: () => {},
+    });
+
+    await assert.rejects(coordinator.ensureConnected(baseRunOptions()), (error) => {
+      const message = getErrorMessage(error);
+      assert.match(message, /\[PROTOCOL_ERROR\]/);
+      assert.match(message, /preference resolver failed unexpectedly/);
+      return true;
+    });
+  });
 });
