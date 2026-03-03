@@ -18,6 +18,9 @@ const thresholds = [
   { suffix: path.join('src', 'authService.ts'), minLines: 40 },
   { suffix: path.join('src', 'thinkingParser.ts'), minLines: 80 },
   { suffix: path.join('src', 'webviewHandler.ts'), minLines: 45 },
+  { suffix: path.join('src', 'cliDiscovery.ts'), minLines: 60 },
+  { suffix: path.join('src', 'process', 'portDiscovery.ts'), minLines: 60 },
+  { suffix: path.join('src', 'shared', 'jsonFileStore.ts'), minLines: 60 },
 ];
 
 let hasFailure = false;
@@ -26,6 +29,11 @@ for (const rule of thresholds) {
   const key = Object.keys(summary).find((entry) => entry.endsWith(rule.suffix));
 
   if (!key) {
+    const expectedPath = path.resolve(rule.suffix);
+    if (!fs.existsSync(expectedPath)) {
+      console.warn(`Skipping removed file threshold: ${rule.suffix}`);
+      continue;
+    }
     console.error(`Missing coverage entry: ${rule.suffix}`);
     hasFailure = true;
     continue;
@@ -45,6 +53,20 @@ for (const rule of thresholds) {
   }
 
   console.log(`Coverage OK ${rule.suffix}: ${pct}%`);
+}
+
+const totalLinesPct = summary?.total?.lines?.pct;
+const totalMinLines = 80;
+if (typeof totalLinesPct !== 'number') {
+  console.error('Coverage data missing total.lines.pct');
+  hasFailure = true;
+} else if (totalLinesPct < totalMinLines) {
+  console.error(
+    `Coverage below total threshold: ${totalLinesPct}% < ${totalMinLines}%`,
+  );
+  hasFailure = true;
+} else {
+  console.log(`Coverage OK total: ${totalLinesPct}%`);
 }
 
 if (hasFailure) {
