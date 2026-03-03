@@ -2,21 +2,21 @@
 gsd_state_version: 1.0
 milestone: v0.2
 milestone_name: milestone
-status: unknown
-last_updated: "2026-03-02T13:47:32.272Z"
+status: in_progress
+last_updated: "2026-03-03T13:10:50Z"
 progress:
-  total_phases: 1
+  total_phases: 2
   completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
+  total_plans: 7
+  completed_plans: 4
 ---
 
 ## Current Position
 
 Phase: 02-file-size-compliance
-Plan: —
-Status: Phase 1 complete; ready to execute Phase 2 plans
-Last activity: 2026-03-02 — Executed 01-03 plan and wrote summary
+Plan: 02
+Status: Completed 02-01; ready to execute 02-02
+Last activity: 2026-03-03 — Executed 02-01 plan and wrote summary
 
 ## Project Reference
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 | Phase | Name | Status | Plans |
 |-------|------|--------|-------|
 | 1 | Error Context | ● Complete | 3/3 |
-| 2 | File Size Compliance | ○ Pending | 0 |
+| 2 | File Size Compliance | ◐ In Progress | 1/4 |
 | 3 | Test Coverage | ○ Pending | 0 |
 | 4 | Preact Webview Rewrite | ○ Pending | 0 |
 
@@ -54,11 +54,14 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 - 2026-03-02 (01-error-context/02): Kept user stream errors concise and moved richer failure context to debug logs.
 - 2026-03-02 (01-error-context/03): Tagged errors at lifecycle boundaries (transport/auth/protocol) to preserve stage precision.
 - 2026-03-02 (01-error-context/03): Preserved normalized original error text inside tagged output to keep missing-session recovery heuristics compatible.
+- [Phase 02-file-size-compliance]: Kept AcpRunExecutor API and mutable deps seam stable while extracting recovery/inactivity logic into acpRunRecovery helpers.
+- [Phase 02-file-size-compliance]: Added stable-token recovery assertions and an automated line-count guard to enforce SIZE-01 (<500 lines).
 
 ## Session Log
 
 | Date | Session | Stopped At | Resume |
 |------|---------|------------|--------|
+| 2026-03-03 | Execute 02-01 | Completed 02-file-size-compliance-01-PLAN.md | /gsd:execute-phase 02-file-size-compliance |
 | 2026-03-02 | Execute 01-03 | Completed 01-error-context-03-PLAN.md | /gsd:execute-phase 02-file-size-compliance |
 | 2026-03-02 | Execute 01-02 | Completed 01-error-context-02-PLAN.md | /gsd:execute-phase 01-error-context |
 | 2026-03-02 | Execute 01-01 | Completed 01-error-context-01-PLAN.md | /gsd:execute-phase 01-error-context |
