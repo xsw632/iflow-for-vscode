@@ -31,8 +31,8 @@ Requirements for stability, quality, and Preact migration. Each maps to roadmap 
 
 - [x] **TEST-01**: cliDiscovery.ts coverage raised above 60% (currently 30.26%)
 - [x] **TEST-02**: portDiscovery.ts coverage raised above 60% (currently 31.57%)
-- [ ] **TEST-03**: jsonFileStore.ts coverage raised above 60% (currently 39.5%)
-- [ ] **TEST-04**: Overall project coverage reaches 80%+ (currently 78.4%)
+- [x] **TEST-03**: jsonFileStore.ts coverage raised above 60% (currently 39.5%)
+- [x] **TEST-04**: Overall project coverage reaches 80%+ (currently 78.4%)
 
 ### Preact Webview Rewrite
 
@@ -66,8 +66,8 @@ Requirements for stability, quality, and Preact migration. Each maps to roadmap 
 | SIZE-04 | Phase 3 | Pending |
 | TEST-01 | Phase 4 | Complete |
 | TEST-02 | Phase 4 | Complete |
-| TEST-03 | Phase 4 | Pending |
-| TEST-04 | Phase 4 | Pending |
+| TEST-03 | Phase 4 | Complete |
+| TEST-04 | Phase 4 | Complete |
 | PREACT-01 | Phase 5 | Pending |
 | PREACT-02 | Phase 5 | Pending |
 | PREACT-03 | Phase 5 | Pending |
