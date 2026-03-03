@@ -457,6 +457,42 @@ suite("WebviewHandler", () => {
     );
   });
 
+  test("message handler factory routes fileChangeAction to extracted delegate", async () => {
+    let calls = 0;
+    const context = {
+      handleFileChangeAction: async (
+        message: Extract<WebviewMessage, { type: "fileChangeAction" }>,
+      ) => {
+        calls += 1;
+        assert.strictEqual(message.action, "approve");
+      },
+    } as unknown as WebviewMessageHandlerContext;
+
+    const handled = await routeWebviewMessage(
+      {
+        type: "fileChangeAction",
+        action: "approve",
+        conversationId: "conv-1",
+        assistantMessageId: "msg-1",
+        path: "/tmp/file.ts",
+      },
+      createWebviewMessageHandlers(context),
+    );
+
+    assert.strictEqual(handled, true);
+    assert.strictEqual(calls, 1);
+  });
+
+  test("webviewHandler facade stays under SIZE-03 line limit", () => {
+    const webviewHandlerPath = path.join(process.cwd(), "src/webviewHandler.ts");
+    const source = fs.readFileSync(webviewHandlerPath, "utf-8");
+    const lineCount = source.trimEnd().split(/\r?\n/).length;
+    assert.ok(
+      lineCount < 500,
+      `Expected src/webviewHandler.ts < 500 lines, got ${lineCount}`,
+    );
+  });
+
   test("message handler factory preserves ready and unknown-message routing behavior", async () => {
     const callOrder: string[] = [];
     const context = {
