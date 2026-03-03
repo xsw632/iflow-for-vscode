@@ -14,6 +14,7 @@ import { PlanApprovalCoordinator } from "./webview/planApprovalCoordinator";
 import { SendMessagePipeline } from "./webview/sendMessagePipeline";
 import { buildWebviewHtml } from "./webview/htmlTemplate";
 import { routeWebviewMessage } from "./webview/messageRouter";
+import { createWebviewMessageHandlers } from "./webview/messageHandler";
 import { WorkspaceFileService } from "./webview/workspaceFileService";
 import { IDEContextSyncService } from "./webview/ideContextSyncService";
 import { FileChangeReviewService } from "./webview/fileChangeReviewService";
@@ -275,41 +276,43 @@ export class WebviewHandler {
     try {
       await routeWebviewMessage(
         message,
-        {
-          ready: async () => {
-            this.syncWorkspaceFolders();
+        createWebviewMessageHandlers({
+          syncWorkspaceFolders: () => this.syncWorkspaceFolders(),
+          postStateUpdated: () => {
             this.postMessage({
               type: "stateUpdated",
               state: this.store.getState(),
             });
-            this.ideContextSyncService.push(IDE_CONTEXT_MAX_SELECTION_CHARS);
           },
-          recheckCli: async () => {
+          pushIdeContext: () =>
+            this.ideContextSyncService.push(IDE_CONTEXT_MAX_SELECTION_CHARS),
+          resetCliConnection: async () => {
             await this.client.resetConnection();
             this.client.clearAutoDetectCache();
             this.cliStatusService.invalidateCache();
-            await this.checkCliAvailability(true);
           },
+          checkCliAvailability: async (forceRefresh) =>
+            this.checkCliAvailability(forceRefresh),
           pickFiles: async () => this.handlePickFiles(),
-          listWorkspaceFiles: async (msg) => {
+          listWorkspaceFiles: async (query) => {
             const files = await this.workspaceFileService.listWorkspaceFiles(
-              msg.query,
+              query,
             );
             this.postMessage({ type: "workspaceFiles", files });
           },
-          readFiles: async (msg) => {
-            const files = await this.workspaceFileService.readFiles(msg.paths);
+          readFiles: async (paths) => {
+            const files = await this.workspaceFileService.readFiles(paths);
             this.postMessage({ type: "fileContents", files });
           },
-          openFile: async (msg) => {
+          openFile: async (targetPath) => {
             try {
-              await this.workspaceFileService.openFile(msg.path);
+              await this.workspaceFileService.openFile(targetPath);
             } catch (error) {
               const messageText = toAppError(error).message;
-              this.debug(`Failed to open file ${msg.path}: ${messageText}`);
+              this.debug(`Failed to open file ${targetPath}: ${messageText}`);
             }
           },
-          newConversation: async () => {
+          newConversation: () => {
             const activeUri = this.deps.getActiveTextEditor()?.document.uri;
             const folder =
               activeUri?.scheme === "file"
@@ -317,24 +320,19 @@ export class WebviewHandler {
                 : undefined;
             this.store.newConversation(folder?.uri.fsPath);
           },
-          switchConversation: async (msg) =>
-            this.store.switchConversation(msg.conversationId),
-          deleteConversation: async (msg) =>
-            this.store.deleteConversation(msg.conversationId),
-          clearConversation: async () => this.store.clearCurrentConversation(),
-          setMode: async (msg) => this.store.setMode(msg.mode),
-          setThink: async (msg) => this.store.setThink(msg.enabled),
-          setModel: async (msg) => this.store.setModel(msg.model),
-          setWorkspaceFolder: async (msg) =>
-            this.store.setConversationWorkspaceFolder(msg.uri),
-          sendMessage: async (msg) =>
-            this.handleSendMessage(
-              msg.content,
-              msg.attachedFiles,
-              false,
-              msg.ideContext,
-            ),
-          toolApproval: async (msg) => {
+          switchConversation: (conversationId) =>
+            this.store.switchConversation(conversationId),
+          deleteConversation: (conversationId) =>
+            this.store.deleteConversation(conversationId),
+          clearConversation: () => this.store.clearCurrentConversation(),
+          setMode: (mode) => this.store.setMode(mode),
+          setThink: (enabled) => this.store.setThink(enabled),
+          setModel: (model) => this.store.setModel(model),
+          setWorkspaceFolder: (uri) =>
+            this.store.setConversationWorkspaceFolder(uri),
+          sendMessage: async (content, attachedFiles, ideContext) =>
+            this.handleSendMessage(content, attachedFiles, false, ideContext),
+          handleToolApproval: async (msg) => {
             if (msg.outcome === "reject") {
               await this.client.rejectToolCall(msg.requestId);
               await this.client.cancel();
@@ -346,9 +344,9 @@ export class WebviewHandler {
             }
             await this.client.approveToolCall(msg.requestId, msg.outcome);
           },
-          questionAnswer: async (msg) =>
-            this.client.answerQuestions(msg.requestId, msg.answers),
-          fileChangeAction: async (msg) => {
+          answerQuestions: async (requestId, answers) =>
+            this.client.answerQuestions(requestId, answers),
+          handleFileChangeAction: async (msg) => {
             try {
               const summary =
                 await this.fileChangeReviewService.handleAction(msg);
@@ -364,7 +362,7 @@ export class WebviewHandler {
               await this.deps.showErrorMessage(messageText);
             }
           },
-          planApproval: async (msg) => {
+          handlePlanApproval: async (msg) => {
             if (msg.requestId === -1) {
               this.planApprovalCoordinator.registerSyntheticApproval(
                 msg.option,
@@ -396,7 +394,7 @@ export class WebviewHandler {
             this.store.endAssistantMessage();
             this.planApprovalCoordinator.cancelWait();
           },
-        },
+        }),
         (unknownType) => {
           this.debug(`Unhandled webview message type: ${unknownType}`);
         },

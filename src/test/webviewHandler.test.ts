@@ -5,6 +5,11 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
+import {
+  createWebviewMessageHandlers,
+  type WebviewMessageHandlerContext,
+} from "../webview/messageHandler";
+import { routeWebviewMessage } from "../webview/messageRouter";
 
 class FakeMemento {
   private value: unknown;
@@ -374,5 +379,47 @@ suite("WebviewHandler", () => {
 
     assert.strictEqual(state.errorMessages.length, 1);
     await handler.dispose();
+  });
+
+  test("message handler factory preserves ready and unknown-message routing behavior", async () => {
+    const callOrder: string[] = [];
+    const context = {
+      syncWorkspaceFolders: () => {
+        callOrder.push("syncWorkspaceFolders");
+      },
+      postStateUpdated: () => {
+        callOrder.push("postStateUpdated");
+      },
+      pushIdeContext: () => {
+        callOrder.push("pushIdeContext");
+      },
+    } as unknown as WebviewMessageHandlerContext;
+
+    const handlers = createWebviewMessageHandlers(context);
+    const unhandled: string[] = [];
+
+    const readyHandled = await routeWebviewMessage(
+      { type: "ready" },
+      handlers,
+      (messageType) => {
+        unhandled.push(messageType);
+      },
+    );
+    const unknownHandled = await routeWebviewMessage(
+      { type: "pickFiles" },
+      {},
+      (messageType) => {
+        unhandled.push(messageType);
+      },
+    );
+
+    assert.strictEqual(readyHandled, true);
+    assert.deepStrictEqual(callOrder, [
+      "syncWorkspaceFolders",
+      "postStateUpdated",
+      "pushIdeContext",
+    ]);
+    assert.strictEqual(unknownHandled, false);
+    assert.deepStrictEqual(unhandled, ["pickFiles"]);
   });
 });
