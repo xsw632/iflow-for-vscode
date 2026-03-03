@@ -174,13 +174,23 @@ suite('portDiscovery fake server harness', () => {
     });
     harness.queue({
       outcome: 'listening',
-      address: 'invalid',
+      address: { address: '127.0.0.1', family: 'IPv4', port: 'not-a-number' },
     });
 
     const resolved = await findAvailablePort();
     await assert.rejects(() => findAvailablePort(), /Failed to resolve available ACP port/);
 
     assert.strictEqual(resolved, 19002);
+  });
+
+  test('propagates net error rejections in findAvailablePort', async () => {
+    const harness = installHarness();
+    harness.queue({
+      outcome: 'error',
+      error: new Error('probe failed'),
+    });
+
+    await assert.rejects(() => findAvailablePort(), /probe failed/);
   });
 });
 
