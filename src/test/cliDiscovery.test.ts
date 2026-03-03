@@ -11,6 +11,77 @@ import {
   type DiscoveryAttemptDiagnostic,
 } from '../cliDiscovery';
 
+type MaybePromise<T> = T | Promise<T>;
+
+type EnvOverrides = Record<string, string | undefined>;
+
+async function withPatchedPlatform<T>(
+  platform: NodeJS.Platform,
+  run: () => MaybePromise<T>,
+): Promise<T> {
+  const original = Object.getOwnPropertyDescriptor(process, 'platform');
+  Object.defineProperty(process, 'platform', { value: platform });
+  try {
+    return await run();
+  } finally {
+    if (original) {
+      Object.defineProperty(process, 'platform', original);
+    }
+  }
+}
+
+async function withPatchedEnv<T>(
+  overrides: EnvOverrides,
+  run: () => MaybePromise<T>,
+): Promise<T> {
+  const originals = new Map<string, string | undefined>();
+  for (const [key, value] of Object.entries(overrides)) {
+    originals.set(key, process.env[key]);
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+
+  try {
+    return await run();
+  } finally {
+    for (const [key, value] of originals.entries()) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  }
+}
+
+async function withPatchedProperty<T extends object, K extends keyof T, R>(
+  target: T,
+  key: K,
+  value: T[K],
+  run: () => MaybePromise<R>,
+): Promise<R> {
+  const ownDescriptor = Object.getOwnPropertyDescriptor(target, key);
+  Object.defineProperty(target, key, {
+    configurable: true,
+    enumerable: ownDescriptor?.enumerable ?? true,
+    writable: true,
+    value,
+  });
+
+  try {
+    return await run();
+  } finally {
+    if (ownDescriptor) {
+      Object.defineProperty(target, key, ownDescriptor);
+    } else {
+      delete (target as unknown as Record<string, unknown>)[String(key)];
+    }
+  }
+}
+
 suite('cliDiscovery test harness', () => {
   test('restores process.platform when patched callback throws', async () => {
     const originalPlatform = process.platform;
