@@ -29,8 +29,8 @@ Requirements for stability, quality, and Preact migration. Each maps to roadmap 
 
 ### Test Coverage
 
-- [ ] **TEST-01**: cliDiscovery.ts coverage raised above 60% (currently 30.26%)
-- [ ] **TEST-02**: portDiscovery.ts coverage raised above 60% (currently 31.57%)
+- [x] **TEST-01**: cliDiscovery.ts coverage raised above 60% (currently 30.26%)
+- [x] **TEST-02**: portDiscovery.ts coverage raised above 60% (currently 31.57%)
 - [ ] **TEST-03**: jsonFileStore.ts coverage raised above 60% (currently 39.5%)
 - [ ] **TEST-04**: Overall project coverage reaches 80%+ (currently 78.4%)
 
@@ -64,8 +64,8 @@ Requirements for stability, quality, and Preact migration. Each maps to roadmap 
 | SIZE-02 | Phase 3 | Complete |
 | SIZE-03 | Phase 3 | Complete |
 | SIZE-04 | Phase 3 | Pending |
-| TEST-01 | Phase 4 | Pending |
-| TEST-02 | Phase 4 | Pending |
+| TEST-01 | Phase 4 | Complete |
+| TEST-02 | Phase 4 | Complete |
 | TEST-03 | Phase 4 | Pending |
 | TEST-04 | Phase 4 | Pending |
 | PREACT-01 | Phase 5 | Pending |

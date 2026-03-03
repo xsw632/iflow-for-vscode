@@ -3,20 +3,20 @@ gsd_state_version: 1.0
 milestone: v0.2
 milestone_name: milestone
 status: in_progress
-last_updated: "2026-03-03T13:41:25.217Z"
+last_updated: "2026-03-03T15:03:40.000Z"
 progress:
-  total_phases: 2
+  total_phases: 3
   completed_phases: 1
-  total_plans: 7
-  completed_plans: 6
+  total_plans: 10
+  completed_plans: 8
 ---
 
 ## Current Position
 
-Phase: 02-file-size-compliance
-Plan: 04
-Status: Completed 02-03; ready to execute 02-04
-Last activity: 2026-03-03 — Executed 02-03 plan and wrote summary
+Phase: 03-test-coverage
+Plan: 03
+Status: Completed 03-02; ready to execute 03-03
+Last activity: 2026-03-03 — Executed 03-02 plan and wrote summary
 
 ## Project Reference
 
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 |-------|------|--------|-------|
 | 1 | Error Context | ● Complete | 3/3 |
 | 2 | File Size Compliance | ◐ In Progress | 3/4 |
-| 3 | Test Coverage | ○ Pending | 0 |
+| 3 | Test Coverage | ◐ In Progress | 2/3 |
 | 4 | Preact Webview Rewrite | ○ Pending | 0 |
 
 ## Accumulated Context
@@ -61,11 +61,16 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 - [Phase 02-file-size-compliance]: Kept WebviewHandler as the public integration facade while extracting message routing via explicit context callbacks.
 - [Phase 02-file-size-compliance]: Centralized fileChangeAction success/error handling in src/webview/fileChangeHandler.ts to preserve toAppError and user-notification semantics.
 - [Phase 02-file-size-compliance]: Added a SIZE-03 regression gate in unit tests to enforce src/webviewHandler.ts stays below 500 lines.
+- [Phase 03-test-coverage]: Used mutable require()-backed cp/fs patching in cliDiscovery tests to avoid non-configurable ESM namespace bindings.
+- [Phase 03-test-coverage]: Normalized Windows path separators in assertions to keep discovery branch tests deterministic across host platforms.
+- [Phase 03-test-coverage]: Used a local fake server harness to avoid real socket race conditions in port tests.
+- [Phase 03-test-coverage]: Locked resolveStartupPort behavior with dependency call-count assertions instead of implementation-coupled internals.
 
 ## Session Log
 
 | Date | Session | Stopped At | Resume |
 |------|---------|------------|--------|
+| 2026-03-03 | Execute 03-02 | Completed 03-test-coverage-02-PLAN.md | /gsd:execute-phase 03-test-coverage |
 | 2026-03-03 | Execute 02-03 | Completed 02-file-size-compliance-03-PLAN.md | /gsd:execute-phase 02-file-size-compliance |
 | 2026-03-03 | Execute 02-02 | Completed 02-file-size-compliance-02-PLAN.md | /gsd:execute-phase 02-file-size-compliance |
 | 2026-03-03 | Execute 02-01 | Completed 02-file-size-compliance-01-PLAN.md | /gsd:execute-phase 02-file-size-compliance |

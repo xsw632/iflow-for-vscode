@@ -19,7 +19,7 @@
 |---|---|---|---|
 | 1 — Error Context | 3/3 | 01-03 (2026-03-02) | Complete |
 | 2 — File Size Compliance | 3/4 | 02-03 (2026-03-03) | In Progress |
-| 3 — Test Coverage | 0/0 | — | Pending |
+| 3 — Test Coverage | 2/3 | 03-02 (2026-03-03) | In Progress |
 | 4 — Preact Webview Rewrite | 0/0 | — | Pending |
 
 ## Phase Details
@@ -83,12 +83,19 @@
 4. Overall project coverage is 80.0% or higher (currently 78.4%)
 
 **Key files:**
-- `test/unit/cliDiscovery.test.ts` — new/expanded
-- `test/unit/portDiscovery.test.ts` — new/expanded
-- `test/unit/jsonFileStore.test.ts` — new/expanded
+- `src/test/cliDiscovery.test.ts` — expanded
+- `src/test/portDiscovery.test.ts` — new
+- `src/test/jsonFileStore.test.ts` — expanded
 - Additional test files for other low-coverage modules as needed
 
 **Dependencies:** Should run after Phase 2 (file splits may change import paths in tests).
+
+**Plans:** 3 plans
+
+Plans:
+- [x] 03-01-PLAN.md — Raise `cliDiscovery.ts` coverage above 60% with deterministic Unix/Windows branch tests
+- [x] 03-02-PLAN.md — Add `portDiscovery.ts` branch tests and lift module coverage above 60%
+- [ ] 03-03-PLAN.md — Harden `jsonFileStore` branch coverage and enforce final 80%+ coverage gate
 
 ---
 
