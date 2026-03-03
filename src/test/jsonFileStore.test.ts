@@ -6,12 +6,40 @@ import { JsonFileStore } from "../shared/jsonFileStore";
 
 suite("JsonFileStore", () => {
   let tmpDir: string;
+  let restorePatches: Array<() => void>;
+
+  const patchProperty = (
+    target: object,
+    key: string,
+    value: unknown,
+    restores: Array<() => void>,
+  ) => {
+    const descriptor = Object.getOwnPropertyDescriptor(target, key);
+    Object.defineProperty(target, key, {
+      configurable: true,
+      enumerable: descriptor?.enumerable ?? true,
+      writable: true,
+      value,
+    });
+    restores.push(() => {
+      if (descriptor) {
+        Object.defineProperty(target, key, descriptor);
+        return;
+      }
+      Reflect.deleteProperty(target, key);
+    });
+  };
 
   setup(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "jsonfilestore-test-"));
+    restorePatches = [];
   });
 
   teardown(() => {
+    while (restorePatches.length > 0) {
+      const restore = restorePatches.pop();
+      restore?.();
+    }
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
@@ -160,21 +188,21 @@ suite("JsonFileStore", () => {
     const filePath = path.join(tmpDir, "win32-write.json");
     const store = new JsonFileStore(filePath, () => {});
     const nativeFs = require("fs") as typeof fs;
-    const originalPlatform = process.platform;
-    const originalWriteFileSync = nativeFs.writeFileSync;
+    const originalWriteFileSync = nativeFs.writeFileSync.bind(nativeFs);
     let observedEncoding: unknown;
 
-    // RED phase uses direct mutation first; GREEN will harden restoration/patching.
-    (process as { platform: NodeJS.Platform }).platform = "win32";
-    nativeFs.writeFileSync = ((target, content, options) => {
+    patchProperty(process, "platform", "win32", restorePatches);
+    patchProperty(
+      nativeFs,
+      "writeFileSync",
+      ((target, content, options) => {
       observedEncoding = options;
       return originalWriteFileSync(target, content, options as never);
-    }) as typeof nativeFs.writeFileSync;
+      }) as typeof nativeFs.writeFileSync,
+      restorePatches,
+    );
 
     const success = store.write({ os: "windows" });
-
-    nativeFs.writeFileSync = originalWriteFileSync;
-    (process as { platform: NodeJS.Platform }).platform = originalPlatform;
 
     assert.strictEqual(success, true);
     assert.strictEqual(observedEncoding, "utf-8");
@@ -185,21 +213,24 @@ suite("JsonFileStore", () => {
     const logMessages: string[] = [];
     const store = new JsonFileStore(filePath, (msg) => logMessages.push(msg));
     const nativeFs = require("fs") as typeof fs;
-    const originalStatSync = nativeFs.statSync;
+    const originalStatSync = nativeFs.statSync.bind(nativeFs);
     let throwOnce = true;
 
-    nativeFs.statSync = ((target, options) => {
+    patchProperty(
+      nativeFs,
+      "statSync",
+      ((target, options) => {
       if (throwOnce && target === filePath) {
         throwOnce = false;
         throw new Error("stat failed");
       }
       return originalStatSync(target, options as never);
-    }) as typeof nativeFs.statSync;
+      }) as typeof nativeFs.statSync,
+      restorePatches,
+    );
 
     const data = { fallback: true };
     const success = store.write(data);
-
-    nativeFs.statSync = originalStatSync;
 
     assert.strictEqual(success, true);
     assert.strictEqual(logMessages.length, 0);
