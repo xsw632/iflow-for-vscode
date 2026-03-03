@@ -1,7 +1,12 @@
 import * as assert from 'assert';
 import { EventEmitter } from 'events';
 import type { AddressInfo, Server } from 'net';
-import { findAvailablePort, isPortAvailable, resolveStartupPort } from '../process/portDiscovery';
+import {
+  findAvailablePort,
+  isPortAvailable,
+  resolveStartupPort,
+  type PortDiscoveryDependencies,
+} from '../process/portDiscovery';
 
 const netModule = require('net') as typeof import('net');
 
@@ -15,6 +20,38 @@ type FakeHarness = {
   queue: (scenario: Scenario) => void;
   restore: () => void;
 };
+
+type TrackedDependencies = {
+  deps: PortDiscoveryDependencies;
+  calls: {
+    isPortAvailable: number[];
+    findAvailablePort: number;
+  };
+};
+
+function createTrackedDependencies(options: {
+  preferredAvailable: boolean;
+  fallbackPort: number;
+}): TrackedDependencies {
+  const calls = {
+    isPortAvailable: [] as number[],
+    findAvailablePort: 0,
+  };
+
+  return {
+    calls,
+    deps: {
+      isPortAvailable: async (port) => {
+        calls.isPortAvailable.push(port);
+        return options.preferredAvailable;
+      },
+      findAvailablePort: async () => {
+        calls.findAvailablePort += 1;
+        return options.fallbackPort;
+      },
+    },
+  };
+}
 
 function installFakeCreateServerHarness(): FakeHarness {
   class FakeServer extends EventEmitter {
