@@ -1,7 +1,7 @@
 import * as assert from 'assert';
 import { EventEmitter } from 'events';
 import type { AddressInfo, Server } from 'net';
-import { findAvailablePort, isPortAvailable } from '../process/portDiscovery';
+import { findAvailablePort, isPortAvailable, resolveStartupPort } from '../process/portDiscovery';
 
 const netModule = require('net') as typeof import('net');
 
@@ -144,5 +144,54 @@ suite('portDiscovery fake server harness', () => {
     await assert.rejects(() => findAvailablePort(), /Failed to resolve available ACP port/);
 
     assert.strictEqual(resolved, 19002);
+  });
+});
+
+suite('portDiscovery resolveStartupPort branches', () => {
+  test('invalid configured port skips preferred check and falls back', async () => {
+    const tracked = createTrackedDependencies({
+      preferredAvailable: true,
+      fallbackPort: 31001,
+    });
+
+    const resolved = await resolveStartupPort(0, tracked.deps);
+
+    assert.strictEqual(resolved, 31001);
+    assert.deepStrictEqual(tracked.calls, {
+      isPortAvailable: [],
+      findAvailablePort: 1,
+    });
+  });
+
+  test('valid configured port returns preferred value when available', async () => {
+    const tracked = createTrackedDependencies({
+      preferredAvailable: true,
+      fallbackPort: 31002,
+    });
+
+    const configuredPort = 31000;
+    const resolved = await resolveStartupPort(configuredPort, tracked.deps);
+
+    assert.strictEqual(resolved, configuredPort);
+    assert.deepStrictEqual(tracked.calls, {
+      isPortAvailable: [configuredPort],
+      findAvailablePort: 0,
+    });
+  });
+
+  test('valid configured port falls back when unavailable', async () => {
+    const tracked = createTrackedDependencies({
+      preferredAvailable: false,
+      fallbackPort: 31003,
+    });
+
+    const configuredPort = 31000;
+    const resolved = await resolveStartupPort(configuredPort, tracked.deps);
+
+    assert.strictEqual(resolved, 31003);
+    assert.deepStrictEqual(tracked.calls, {
+      isPortAvailable: [configuredPort],
+      findAvailablePort: 1,
+    });
   });
 });
