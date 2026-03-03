@@ -941,4 +941,66 @@ suite('SessionCoordinator', () => {
     assert.strictEqual(result.sessionId, 'session-fresh-2');
     assert.ok(requests.some((request) => request.method === 'session/new'));
   });
+
+  test('recoverReusableSession loads requested session when switching session ids', async () => {
+    const requests: Array<{ method: string; params?: unknown }> = [];
+
+    const result = await recoverReusableSession({
+      options: baseRunOptions({ sessionId: 'session-target', mode: 'default' }),
+      currentSessionId: 'session-existing',
+      currentMode: 'default',
+      sendRequest: async (method: string, params?: unknown) => {
+        requests.push({ method, params });
+        return { ok: true };
+      },
+      buildSessionSettings: () => ({ permission_mode: 'default' }),
+    });
+
+    assert.strictEqual(result.action, 'load_requested');
+    assert.strictEqual(result.sessionId, 'session-target');
+    const loadRequest = requests.find((request) => request.method === 'session/load');
+    assert.ok(loadRequest, 'expected session/load when switching session ids');
+    assert.strictEqual((loadRequest?.params as { sessionId?: string }).sessionId, 'session-target');
+  });
+
+  test('recoverReusableSession reloads current session when mode changes', async () => {
+    const requests: Array<{ method: string; params?: unknown }> = [];
+
+    const result = await recoverReusableSession({
+      options: baseRunOptions({ sessionId: 'session-existing', mode: 'plan' }),
+      currentSessionId: 'session-existing',
+      currentMode: 'default',
+      sendRequest: async (method: string, params?: unknown) => {
+        requests.push({ method, params });
+        return { ok: true };
+      },
+      buildSessionSettings: () => ({ permission_mode: 'default' }),
+    });
+
+    assert.strictEqual(result.action, 'reload_current');
+    assert.strictEqual(result.sessionId, 'session-existing');
+    assert.ok(
+      requests.some((request) => request.method === 'session/load'),
+      'expected session/load when mode changes on existing session',
+    );
+  });
+
+  test('recoverReusableSession keeps existing session when mode and id are unchanged', async () => {
+    const requests: Array<{ method: string; params?: unknown }> = [];
+
+    const result = await recoverReusableSession({
+      options: baseRunOptions({ sessionId: 'session-existing', mode: 'default' }),
+      currentSessionId: 'session-existing',
+      currentMode: 'default',
+      sendRequest: async (method: string, params?: unknown) => {
+        requests.push({ method, params });
+        return { ok: true };
+      },
+      buildSessionSettings: () => ({ permission_mode: 'default' }),
+    });
+
+    assert.strictEqual(result.action, 'reuse_existing');
+    assert.strictEqual(result.sessionId, 'session-existing');
+    assert.strictEqual(requests.length, 0);
+  });
 });
