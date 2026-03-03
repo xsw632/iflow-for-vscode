@@ -10,6 +10,7 @@ import {
   type WebviewMessageHandlerContext,
 } from "../webview/messageHandler";
 import { routeWebviewMessage } from "../webview/messageRouter";
+import { createFileChangeActionHandler } from "../webview/fileChangeHandler";
 
 class FakeMemento {
   private value: unknown;
@@ -379,6 +380,71 @@ suite("WebviewHandler", () => {
 
     assert.strictEqual(state.errorMessages.length, 1);
     await handler.dispose();
+  });
+
+  test("file change handler posts roundFileChanges summary on success", async () => {
+    const message: Extract<WebviewMessage, { type: "fileChangeAction" }> = {
+      type: "fileChangeAction",
+      action: "approve",
+      conversationId: "conv-1",
+      assistantMessageId: "msg-1",
+      path: "/tmp/file.ts",
+    };
+    const postedSummaries: Array<{ changedFiles: Array<{ status: string }> }> =
+      [];
+    const actionHandler = createFileChangeActionHandler({
+      handleAction: async () => ({
+        conversationId: "conv-1",
+        assistantMessageId: "msg-1",
+        changedFiles: [
+          { path: "/tmp/file.ts", status: "accepted", operation: "create" },
+        ],
+      }),
+      postRoundFileChanges: (summary) => {
+        postedSummaries.push(summary);
+      },
+      debug: () => {},
+      showErrorMessage: async () => undefined,
+    });
+
+    await actionHandler(message);
+
+    assert.strictEqual(postedSummaries.length, 1);
+    assert.strictEqual(postedSummaries[0].changedFiles[0].status, "accepted");
+  });
+
+  test("file change handler wraps errors and surfaces message", async () => {
+    const message: Extract<WebviewMessage, { type: "fileChangeAction" }> = {
+      type: "fileChangeAction",
+      action: "rollback",
+      conversationId: "conv-1",
+      assistantMessageId: "msg-1",
+      path: "/tmp/file.ts",
+    };
+    const debugMessages: string[] = [];
+    const shownErrors: string[] = [];
+    const actionHandler = createFileChangeActionHandler({
+      handleAction: async () => {
+        throw new Error("no change summary");
+      },
+      postRoundFileChanges: () => {},
+      debug: (entry) => {
+        debugMessages.push(entry);
+      },
+      showErrorMessage: async (entry) => {
+        shownErrors.push(entry);
+        return undefined;
+      },
+    });
+
+    await actionHandler(message);
+
+    assert.strictEqual(shownErrors.length, 1);
+    assert.ok(shownErrors[0].includes("no change summary"));
+    assert.strictEqual(debugMessages.length, 1);
+    assert.ok(
+      debugMessages[0].startsWith("fileChangeAction failed (rollback): "),
+    );
   });
 
   test("message handler factory preserves ready and unknown-message routing behavior", async () => {
