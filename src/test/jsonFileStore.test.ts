@@ -156,6 +156,58 @@ suite("JsonFileStore", () => {
     assert.strictEqual(result, data, "Expected cached reference after write");
   });
 
+  test("write() uses Windows utf-8 signature branch when platform is win32", () => {
+    const filePath = path.join(tmpDir, "win32-write.json");
+    const store = new JsonFileStore(filePath, () => {});
+    const nativeFs = require("fs") as typeof fs;
+    const originalPlatform = process.platform;
+    const originalWriteFileSync = nativeFs.writeFileSync;
+    let observedEncoding: unknown;
+
+    // RED phase uses direct mutation first; GREEN will harden restoration/patching.
+    (process as { platform: NodeJS.Platform }).platform = "win32";
+    nativeFs.writeFileSync = ((target, content, options) => {
+      observedEncoding = options;
+      return originalWriteFileSync(target, content, options as never);
+    }) as typeof nativeFs.writeFileSync;
+
+    const success = store.write({ os: "windows" });
+
+    nativeFs.writeFileSync = originalWriteFileSync;
+    (process as { platform: NodeJS.Platform }).platform = originalPlatform;
+
+    assert.strictEqual(success, true);
+    assert.strictEqual(observedEncoding, "utf-8");
+  });
+
+  test("write() keeps success semantics when post-write statSync throws", () => {
+    const filePath = path.join(tmpDir, "stat-fallback.json");
+    const logMessages: string[] = [];
+    const store = new JsonFileStore(filePath, (msg) => logMessages.push(msg));
+    const nativeFs = require("fs") as typeof fs;
+    const originalStatSync = nativeFs.statSync;
+    let throwOnce = true;
+
+    nativeFs.statSync = ((target, options) => {
+      if (throwOnce && target === filePath) {
+        throwOnce = false;
+        throw new Error("stat failed");
+      }
+      return originalStatSync(target, options as never);
+    }) as typeof nativeFs.statSync;
+
+    const data = { fallback: true };
+    const success = store.write(data);
+
+    nativeFs.statSync = originalStatSync;
+
+    assert.strictEqual(success, true);
+    assert.strictEqual(logMessages.length, 0);
+    assert.ok(fs.existsSync(filePath));
+    const fromDisk = store.read();
+    assert.deepStrictEqual(fromDisk, data);
+  });
+
   // ── update() ────────────────────────────────────────────────────────
 
   test("update() skips write when data unchanged", () => {
