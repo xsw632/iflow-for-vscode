@@ -118,6 +118,37 @@ suite("JsonFileStore", () => {
     );
   });
 
+  test("read() returns {} and logs stable token when statSync hits I/O failure", () => {
+    const filePath = path.join(tmpDir, "io-failure.json");
+    fs.writeFileSync(filePath, JSON.stringify({ ok: true }), "utf-8");
+
+    const logMessages: string[] = [];
+    const store = new JsonFileStore(filePath, (msg) => logMessages.push(msg));
+    const nativeFs = require("fs") as typeof fs;
+    const originalStatSync = nativeFs.statSync.bind(nativeFs);
+
+    patchProperty(
+      nativeFs,
+      "statSync",
+      ((target, options) => {
+        if (target === filePath) {
+          const error = new Error("io denied") as NodeJS.ErrnoException;
+          error.code = "EACCES";
+          throw error;
+        }
+        return originalStatSync(target, options as never);
+      }) as typeof nativeFs.statSync,
+      restorePatches,
+    );
+
+    const result = store.read();
+
+    assert.deepStrictEqual(result, {});
+    assert.strictEqual(logMessages.length, 1);
+    assert.ok(logMessages[0].includes("Failed to parse"));
+    assert.ok(logMessages[0].includes(filePath));
+  });
+
   // ── write() ─────────────────────────────────────────────────────────
 
   test("write() creates file with correct JSON content", () => {
@@ -277,6 +308,60 @@ suite("JsonFileStore", () => {
     assert.strictEqual(result, true);
     const onDisk = JSON.parse(fs.readFileSync(filePath, "utf-8"));
     assert.deepStrictEqual(onDisk, { count: 1 });
+  });
+
+  test("update() persists in-place mutations from cached reads", () => {
+    const filePath = path.join(tmpDir, "in-place-update.json");
+    fs.writeFileSync(filePath, JSON.stringify({ count: 1 }), "utf-8");
+    const store = new JsonFileStore(filePath, () => {});
+
+    const cached = store.read();
+    assert.deepStrictEqual(cached, { count: 1 });
+
+    const result = store.update((data) => {
+      (data as { count: number }).count = 2;
+      return data;
+    });
+
+    assert.strictEqual(result, true);
+    const onDisk = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+    assert.deepStrictEqual(onDisk, { count: 2 });
+  });
+
+  test("update() returns false when write fails after cached read", () => {
+    const filePath = path.join(tmpDir, "update-write-failure.json");
+    fs.writeFileSync(filePath, JSON.stringify({ version: 1 }), "utf-8");
+    const logMessages: string[] = [];
+    const store = new JsonFileStore(filePath, (msg) => logMessages.push(msg));
+    const nativeFs = require("fs") as typeof fs;
+    const originalWriteFileSync = nativeFs.writeFileSync.bind(nativeFs);
+
+    patchProperty(
+      nativeFs,
+      "writeFileSync",
+      (() => {
+        const error = new Error("disk full") as NodeJS.ErrnoException;
+        error.code = "ENOSPC";
+        throw error;
+      }) as typeof nativeFs.writeFileSync,
+      restorePatches,
+    );
+
+    const cached = store.read();
+    assert.deepStrictEqual(cached, { version: 1 });
+
+    const result = store.update((data) => ({
+      ...data,
+      version: 2,
+    }));
+
+    assert.strictEqual(result, false);
+    assert.strictEqual(logMessages.length, 1);
+    assert.ok(logMessages[0].includes("Failed to write"));
+
+    patchProperty(nativeFs, "writeFileSync", originalWriteFileSync, restorePatches);
+    const onDisk = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+    assert.deepStrictEqual(onDisk, { version: 1 });
   });
 
   test("update() works on non-existent file (read returns {}, updater adds data)", () => {
