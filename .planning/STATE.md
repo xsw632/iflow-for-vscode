@@ -3,20 +3,20 @@ gsd_state_version: 1.0
 milestone: v0.2
 milestone_name: milestone
 status: in_progress
-last_updated: "2026-03-03T13:10:50Z"
+last_updated: "2026-03-03T13:26:14.352Z"
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 7
-  completed_plans: 4
+  completed_plans: 5
 ---
 
 ## Current Position
 
 Phase: 02-file-size-compliance
-Plan: 02
-Status: Completed 02-01; ready to execute 02-02
-Last activity: 2026-03-03 — Executed 02-01 plan and wrote summary
+Plan: 03
+Status: Completed 02-02; ready to execute 02-03
+Last activity: 2026-03-03 — Executed 02-02 plan and wrote summary
 
 ## Project Reference
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 | Phase | Name | Status | Plans |
 |-------|------|--------|-------|
 | 1 | Error Context | ● Complete | 3/3 |
-| 2 | File Size Compliance | ◐ In Progress | 1/4 |
+| 2 | File Size Compliance | ◐ In Progress | 2/4 |
 | 3 | Test Coverage | ○ Pending | 0 |
 | 4 | Preact Webview Rewrite | ○ Pending | 0 |
 
@@ -39,7 +39,7 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 - Webview uses vanilla TypeScript with manual DOM manipulation (no framework)
 - Preact chosen for webview rewrite (full rewrite, webview-only scope, CSS approach at Claude's discretion)
 - State management approach at Claude's discretion (signals or useReducer)
-- 4 files exceed 500-line limit: acpRunExecutor, sessionCoordinator, webviewHandler, processManager
+- 2 files exceed 500-line limit: webviewHandler, processManager
 - Test coverage at 78.4%, target 80%+
 - ERR-01 and ERR-04 marked complete in REQUIREMENTS.md after 01-01 execution
 - Preflight validation now fails fast in fixed order: files -> context -> model.
@@ -56,11 +56,14 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 - 2026-03-02 (01-error-context/03): Preserved normalized original error text inside tagged output to keep missing-session recovery heuristics compatible.
 - [Phase 02-file-size-compliance]: Kept AcpRunExecutor API and mutable deps seam stable while extracting recovery/inactivity logic into acpRunRecovery helpers.
 - [Phase 02-file-size-compliance]: Added stable-token recovery assertions and an automated line-count guard to enforce SIZE-01 (<500 lines).
+- [Phase 02-file-size-compliance]: Kept SessionCoordinator public lifecycle contract unchanged while delegating recovery and tag utilities to a focused helper module.
+- [Phase 02-file-size-compliance]: Used helper-level action assertions (create/load/reload/reuse) to guard deterministic reusable-session behavior without brittle message snapshots.
 
 ## Session Log
 
 | Date | Session | Stopped At | Resume |
 |------|---------|------------|--------|
+| 2026-03-03 | Execute 02-02 | Completed 02-file-size-compliance-02-PLAN.md | /gsd:execute-phase 02-file-size-compliance |
 | 2026-03-03 | Execute 02-01 | Completed 02-file-size-compliance-01-PLAN.md | /gsd:execute-phase 02-file-size-compliance |
 | 2026-03-02 | Execute 01-03 | Completed 01-error-context-03-PLAN.md | /gsd:execute-phase 02-file-size-compliance |
 | 2026-03-02 | Execute 01-02 | Completed 01-error-context-02-PLAN.md | /gsd:execute-phase 01-error-context |

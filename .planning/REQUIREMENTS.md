@@ -23,7 +23,7 @@ Requirements for stability, quality, and Preact migration. Each maps to roadmap 
 ### File Size Compliance
 
 - [x] **SIZE-01**: acpRunExecutor.ts split below 500 lines (extract recovery/inactivity logic)
-- [ ] **SIZE-02**: sessionCoordinator.ts split below 500 lines (extract recovery handler)
+- [x] **SIZE-02**: sessionCoordinator.ts split below 500 lines (extract recovery handler)
 - [ ] **SIZE-03**: webviewHandler.ts split below 500 lines (extract message/file change handlers)
 - [ ] **SIZE-04**: processManager.ts split below 500 lines (extract startup probe)
 
@@ -61,7 +61,7 @@ Requirements for stability, quality, and Preact migration. Each maps to roadmap 
 | ERR-03 | Phase 2 | Complete |
 | ERR-04 | Phase 2 | Complete |
 | SIZE-01 | Phase 3 | Complete |
-| SIZE-02 | Phase 3 | Pending |
+| SIZE-02 | Phase 3 | Complete |
 | SIZE-03 | Phase 3 | Pending |
 | SIZE-04 | Phase 3 | Pending |
 | TEST-01 | Phase 4 | Pending |
