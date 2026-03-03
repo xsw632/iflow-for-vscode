@@ -1,5 +1,11 @@
 import * as assert from 'assert';
 import { SessionCoordinator } from '../acp/sessionCoordinator';
+import {
+  ensureLayerTag,
+  recoverReusableSession,
+  resolveAuthMethodOrder,
+  DEFAULT_AUTH_RECOVERY_ACTION,
+} from '../acp/sessionRecoveryHandler';
 import { RuntimeConfigApplier } from '../acp/runtimeConfigApplier';
 import { InteractionBridge } from '../acp/interactionBridge';
 import { ConnectionSnapshot, RunOptions } from '../acp/types';
@@ -891,5 +897,48 @@ suite('SessionCoordinator', () => {
       assert.match(message, /preference resolver failed unexpectedly/);
       return true;
     });
+  });
+
+  test('resolveAuthMethodOrder keeps preferred ordering with deterministic fallbacks', () => {
+    const order = resolveAuthMethodOrder({
+      availableMethodIds: ['iflow', 'oauth-iflow'],
+      preferredMethodIds: ['iflow', 'oauth-iflow'],
+    });
+
+    assert.deepStrictEqual(order, ['iflow', 'oauth-iflow']);
+  });
+
+  test('ensureLayerTag adds auth recovery action exactly once', () => {
+    const error = ensureLayerTag(new Error('token expired'), 'AUTH_ERROR');
+    assert.match(error.message, /\[AUTH_ERROR\]/);
+    assert.match(error.message, /token expired/);
+    assert.match(error.message, /iflow login/i);
+
+    const taggedAgain = ensureLayerTag(error, 'AUTH_ERROR');
+    const actionOccurrences = taggedAgain.message.match(
+      new RegExp(DEFAULT_AUTH_RECOVERY_ACTION.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'),
+    );
+    assert.strictEqual(actionOccurrences?.length ?? 0, 1);
+  });
+
+  test('recoverReusableSession creates a new server session when no sessionId is provided', async () => {
+    const requests: Array<{ method: string; params?: unknown }> = [];
+
+    const result = await recoverReusableSession({
+      options: baseRunOptions({ sessionId: undefined }),
+      currentSessionId: 'session-existing',
+      currentMode: 'plan',
+      sendRequest: async (method: string, params?: unknown) => {
+        requests.push({ method, params });
+        if (method === 'session/new') {
+          return { sessionId: 'session-fresh-2' };
+        }
+        return { ok: true };
+      },
+      buildSessionSettings: () => ({ permission_mode: 'default' }),
+    });
+
+    assert.strictEqual(result.sessionId, 'session-fresh-2');
+    assert.ok(requests.some((request) => request.method === 'session/new'));
   });
 });
