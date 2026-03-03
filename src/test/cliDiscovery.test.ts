@@ -6,8 +6,10 @@ import * as os from 'os';
 import {
   buildDiscoveryFailureSummary,
   categorizeDiscoverySource,
+  collectBinaryFromVersionManagerDir,
   findIFlowPathCrossPlatform,
   findIFlowPathWithDiagnostics,
+  getVersionManagerDirs,
   deriveNodePathFromIFlow,
   normalizeDiscoveryFailureReason,
   resolveIFlowScriptCrossPlatform,
@@ -387,6 +389,100 @@ suite('cliDiscovery path lookup branches', () => {
     assert.ok(logs.some((line) => line.includes('[CLI discovery summary]')));
     assert.ok(logs.some((line) => line.includes('[CLI discovery][PATH_LOOKUP] attempts=')));
     assert.ok(logs.some((line) => line.includes('[CLI discovery][KNOWN_LOCATIONS]')));
+  });
+});
+
+suite('cliDiscovery version manager candidate scan', () => {
+  let tempDir: string;
+
+  setup(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'iflow-version-manager-test-'));
+  });
+
+  teardown(() => {
+    try {
+      if (fs.existsSync(tempDir)) {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      }
+    } catch {
+      // Ignore cleanup errors
+    }
+  });
+
+  test('returns first binary from highest version entry', () => {
+    const baseDir = path.join(tempDir, '.nvm', 'versions', 'node');
+    const oldBin = path.join(baseDir, 'v18.20.0', 'bin');
+    const newBin = path.join(baseDir, 'v22.11.0', 'bin');
+    fs.mkdirSync(oldBin, { recursive: true });
+    fs.mkdirSync(newBin, { recursive: true });
+    fs.writeFileSync(path.join(newBin, 'iflow'), '#!/usr/bin/env node');
+
+    const result = collectBinaryFromVersionManagerDir(baseDir, 'iflow', 'bin');
+    assert.deepStrictEqual(result, [path.join(newBin, 'iflow')]);
+  });
+
+  test('returns empty when version directories do not contain the binary', () => {
+    const baseDir = path.join(tempDir, '.fnm', 'node-versions');
+    fs.mkdirSync(path.join(baseDir, 'v22.0.0', 'installation', 'bin'), {
+      recursive: true,
+    });
+    fs.mkdirSync(path.join(baseDir, 'v20.0.0', 'installation', 'bin'), {
+      recursive: true,
+    });
+
+    const result = collectBinaryFromVersionManagerDir(
+      baseDir,
+      'iflow',
+      'installation',
+      'bin',
+    );
+    assert.deepStrictEqual(result, []);
+  });
+
+  test('returns empty when base directory does not exist', () => {
+    const baseDir = path.join(tempDir, 'missing-version-manager');
+    const result = collectBinaryFromVersionManagerDir(baseDir, 'iflow', 'bin');
+    assert.deepStrictEqual(result, []);
+  });
+
+  test('returns empty when scanning version manager entries throws', async () => {
+    const baseDir = path.join(tempDir, '.asdf', 'installs', 'nodejs');
+    fs.mkdirSync(baseDir, { recursive: true });
+    const originalReaddir = mutableFs.readdirSync;
+    const throwingReaddir = ((dir: fs.PathLike) => {
+      if (dir.toString() === baseDir) {
+        throw new Error('EACCES readdir denied');
+      }
+      return originalReaddir(dir);
+    }) as typeof fs.readdirSync;
+
+    await withPatchedProperty(mutableFs, 'readdirSync', throwingReaddir, () => {
+      const result = collectBinaryFromVersionManagerDir(baseDir, 'iflow', 'bin');
+      assert.deepStrictEqual(result, []);
+    });
+  });
+
+  test('builds expected version manager directories from home path', () => {
+    const home = '/Users/demo';
+    const dirs = getVersionManagerDirs(home);
+
+    assert.strictEqual(dirs.length, 4);
+    assert.deepStrictEqual(dirs[0], {
+      baseDir: path.join(home, '.nvm', 'versions', 'node'),
+      nestedBinSegments: ['bin'],
+    });
+    assert.deepStrictEqual(dirs[1], {
+      baseDir: path.join(home, '.fnm', 'node-versions'),
+      nestedBinSegments: ['installation', 'bin'],
+    });
+    assert.deepStrictEqual(dirs[2], {
+      baseDir: path.join(home, '.asdf', 'installs', 'nodejs'),
+      nestedBinSegments: ['bin'],
+    });
+    assert.deepStrictEqual(dirs[3], {
+      baseDir: path.join(home, '.local', 'share', 'mise', 'installs', 'node'),
+      nestedBinSegments: ['bin'],
+    });
   });
 });
 
