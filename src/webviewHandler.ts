@@ -15,6 +15,7 @@ import { SendMessagePipeline } from "./webview/sendMessagePipeline";
 import { buildWebviewHtml } from "./webview/htmlTemplate";
 import { routeWebviewMessage } from "./webview/messageRouter";
 import { createWebviewMessageHandlers } from "./webview/messageHandler";
+import { createFileChangeActionHandler } from "./webview/fileChangeHandler";
 import { WorkspaceFileService } from "./webview/workspaceFileService";
 import { IDEContextSyncService } from "./webview/ideContextSyncService";
 import { FileChangeReviewService } from "./webview/fileChangeReviewService";
@@ -274,6 +275,15 @@ export class WebviewHandler {
   async handleMessage(message: WebviewMessage): Promise<void> {
     this.debug(`Received webview message: ${message.type}`);
     try {
+      const handleFileChangeAction = createFileChangeActionHandler({
+        handleAction: async (msg) => this.fileChangeReviewService.handleAction(msg),
+        postRoundFileChanges: (summary) => {
+          this.postMessage({ type: "roundFileChanges", summary });
+        },
+        debug: (messageText) => this.debug(messageText),
+        showErrorMessage: (messageText) => this.deps.showErrorMessage(messageText),
+      });
+
       await routeWebviewMessage(
         message,
         createWebviewMessageHandlers({
@@ -346,22 +356,7 @@ export class WebviewHandler {
           },
           answerQuestions: async (requestId, answers) =>
             this.client.answerQuestions(requestId, answers),
-          handleFileChangeAction: async (msg) => {
-            try {
-              const summary =
-                await this.fileChangeReviewService.handleAction(msg);
-              this.postMessage({ type: "roundFileChanges", summary });
-            } catch (error) {
-              const messageText = toAppError(
-                error,
-                "Failed to handle file change action",
-              ).message;
-              this.debug(
-                `fileChangeAction failed (${msg.action}): ${messageText}`,
-              );
-              await this.deps.showErrorMessage(messageText);
-            }
-          },
+          handleFileChangeAction,
           handlePlanApproval: async (msg) => {
             if (msg.requestId === -1) {
               this.planApprovalCoordinator.registerSyntheticApproval(
@@ -373,14 +368,12 @@ export class WebviewHandler {
               }
               return;
             }
-
             if (msg.requestId < 0) {
               this.debug(
                 `Ignoring planApproval with invalid requestId=${msg.requestId}`,
               );
               return;
             }
-
             const approved =
               this.planApprovalCoordinator.registerServerApproval(
                 msg.option,
@@ -424,7 +417,6 @@ export class WebviewHandler {
       canSelectMany: true,
       openLabel: "Attach Files",
     });
-
     if (files) {
       this.debug(`Picked files count: ${files.length}`);
       this.postMessage({

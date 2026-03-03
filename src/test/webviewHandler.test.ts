@@ -396,9 +396,19 @@ suite("WebviewHandler", () => {
       handleAction: async () => ({
         conversationId: "conv-1",
         assistantMessageId: "msg-1",
+        timestamp: Date.now(),
         changedFiles: [
-          { path: "/tmp/file.ts", status: "accepted", operation: "create" },
+          {
+            path: "/tmp/file.ts",
+            displayPath: "file.ts",
+            added: 0,
+            removed: 0,
+            kind: "created",
+            status: "accepted",
+          },
         ],
+        totalAdded: 0,
+        totalRemoved: 0,
       }),
       postRoundFileChanges: (summary) => {
         postedSummaries.push(summary);
