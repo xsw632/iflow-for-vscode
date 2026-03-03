@@ -72,8 +72,10 @@ export class JsonFileStore {
     updater: (data: Record<string, unknown>) => Record<string, unknown>,
   ): boolean {
     const data = this.read();
+    const before = JSON.stringify(data);
     const updated = updater(data);
-    if (JSON.stringify(data) === JSON.stringify(updated)) {
+    const after = JSON.stringify(updated);
+    if (before === after) {
       return true;
     }
     return this.write(updated);
