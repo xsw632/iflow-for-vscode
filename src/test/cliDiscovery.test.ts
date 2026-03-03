@@ -5,6 +5,8 @@ import * as os from 'os';
 import {
   buildDiscoveryFailureSummary,
   categorizeDiscoverySource,
+  findIFlowPathCrossPlatform,
+  findIFlowPathWithDiagnostics,
   deriveNodePathFromIFlow,
   normalizeDiscoveryFailureReason,
   resolveIFlowScriptCrossPlatform,
@@ -113,6 +115,132 @@ suite('cliDiscovery test harness', () => {
 
     assert.strictEqual(process.env.SHELL, originalShell);
     assert.strictEqual(process.env.IFLOW_TMP_ENV, undefined);
+  });
+});
+
+suite('cliDiscovery path lookup branches', () => {
+  test('uses direct which success on Unix before login-shell fallback', async () => {
+    const output = await runDiscoveryMock({
+      platform: 'linux',
+      execResponses: {
+        'which iflow': { stdout: '/usr/local/bin/iflow\n' },
+      },
+    });
+
+    assert.strictEqual(output.result.path, '/usr/local/bin/iflow');
+    assert.strictEqual(output.execFileCalls.length, 0);
+    assert.strictEqual(output.result.summary, null);
+  });
+
+  test('uses login-shell fallback after direct which miss on Unix', async () => {
+    const output = await runDiscoveryMock({
+      platform: 'linux',
+      env: { SHELL: '/bin/zsh' },
+      execResponses: {
+        'which iflow': { error: new Error('ENOENT: not found') },
+      },
+      execFileResponses: {
+        '/bin/zsh -lc command -v iflow': { stdout: '/Users/demo/.volta/bin/iflow\n' },
+      },
+    });
+
+    assert.strictEqual(output.result.path, '/Users/demo/.volta/bin/iflow');
+    assert.strictEqual(output.result.summary, null);
+    assert.ok(
+      output.result.diagnostics.some((d) => d.target === 'which iflow' && d.source === 'PATH_LOOKUP'),
+    );
+  });
+
+  test('returns null + summary when Unix lookups and known locations all miss', async () => {
+    const output = await runDiscoveryMock({
+      platform: 'linux',
+      env: { HOME: '/Users/demo', SHELL: '/bin/bash' },
+      execResponses: {
+        'which iflow': { error: new Error('ENOENT: no such file') },
+      },
+      execFileResponses: {
+        '/bin/bash -lc command -v iflow': { error: new Error('ENOENT: command -v not found') },
+      },
+    });
+
+    assert.strictEqual(output.result.path, null);
+    assert.ok(output.result.summary);
+    assert.ok((output.result.summary?.attemptCount ?? 0) >= 2);
+    assert.ok(
+      output.result.diagnostics.some((d) => d.target.includes('command -v iflow') && d.source === 'PATH_LOOKUP'),
+    );
+  });
+
+  test('prefers .ps1 over .cmd over other where results on Windows', async () => {
+    const output = await runDiscoveryMock({
+      platform: 'win32',
+      execResponses: {
+        'where iflow 2>NUL & where iflow.ps1 2>NUL & where iflow.cmd 2>NUL': {
+          stdout: ['C:\\iflow.exe', 'C:\\iflow.cmd', 'C:\\iflow.ps1'].join('\r\n'),
+        },
+      },
+    });
+
+    assert.strictEqual(output.result.path, 'C:\\iflow.ps1');
+    assert.strictEqual(output.result.summary, null);
+  });
+
+  test('uses APPDATA fallback candidates when where returns no hits', async () => {
+    const output = await runDiscoveryMock({
+      platform: 'win32',
+      env: { APPDATA: 'C:\\Users\\demo\\AppData\\Roaming' },
+      execResponses: {
+        'where iflow 2>NUL & where iflow.ps1 2>NUL & where iflow.cmd 2>NUL': {
+          error: new Error('where failed'),
+        },
+      },
+      executableCandidates: ['C:\\Users\\demo\\AppData\\Roaming\\npm\\iflow.cmd'],
+    });
+
+    assert.strictEqual(output.result.path, 'C:\\Users\\demo\\AppData\\Roaming\\npm\\iflow.cmd');
+    assert.strictEqual(output.result.summary, null);
+    assert.ok(
+      output.result.diagnostics.some((d) => d.target === 'where iflow' && d.source === 'PATH_LOOKUP'),
+    );
+  });
+
+  test('returns summary diagnostics when Windows lookups and fallbacks all miss', async () => {
+    const output = await runDiscoveryMock({
+      platform: 'win32',
+      env: { APPDATA: 'C:\\Users\\demo\\AppData\\Roaming' },
+      execResponses: {
+        'where iflow 2>NUL & where iflow.ps1 2>NUL & where iflow.cmd 2>NUL': {
+          error: new Error('ENOENT where'),
+        },
+      },
+    });
+
+    assert.strictEqual(output.result.path, null);
+    assert.ok(output.result.summary);
+    assert.ok((output.result.summary?.attemptCount ?? 0) >= 4);
+    assert.ok(
+      output.result.diagnostics.some((d) => d.target.includes('\\npm\\iflow') || d.target.includes('/npm/iflow')),
+    );
+  });
+
+  test('logs grouped diagnostics when cross-platform discovery fails', async () => {
+    const logs: string[] = [];
+    const result = await runDiscoveryMock({
+      platform: 'linux',
+      env: { HOME: '/Users/demo', SHELL: '/bin/bash' },
+      execResponses: {
+        'which iflow': { error: new Error('ENOENT no which') },
+      },
+      execFileResponses: {
+        '/bin/bash -lc command -v iflow': { error: new Error('ENOENT no command') },
+      },
+      invoke: () => findIFlowPathCrossPlatform((message) => logs.push(message)),
+    });
+
+    assert.strictEqual(result.crossPlatformPath, null);
+    assert.ok(logs.some((line) => line.includes('[CLI discovery summary]')));
+    assert.ok(logs.some((line) => line.includes('[CLI discovery][PATH_LOOKUP] attempts=')));
+    assert.ok(logs.some((line) => line.includes('[CLI discovery][KNOWN_LOCATIONS]')));
   });
 });
 
