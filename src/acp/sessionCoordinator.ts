@@ -9,6 +9,13 @@ import {
   RunOptions,
 } from "./types";
 import { normalizeErrorMessage } from "../errorUtils";
+import {
+  ensureLayerTag,
+  extractAuthMethodIds,
+  recoverReusableSession,
+  resolveAuthMethodOrder,
+  toLayerTaggedError,
+} from "./sessionRecoveryHandler";
 
 interface ProcessManagerLike {
   hasProcess: boolean;
@@ -40,8 +47,6 @@ interface SessionCoordinatorDependencies {
 }
 
 const EMPTY_MCP_SERVERS: readonly never[] = [];
-const AUTH_RECOVERY_ACTION = "Next step: run `iflow login` and retry.";
-
 const INITIAL_CONNECTION_SNAPSHOT: ConnectionSnapshot = {
   status: "disconnected",
   isConnected: false,
@@ -124,10 +129,6 @@ export class SessionCoordinator {
     }
   }
 
-  /**
-   * Tear down the current transport/process and return to a reusable disconnected state.
-   * Unlike dispose(), this keeps the coordinator reusable for future ensureConnected() calls.
-   */
   async reset(): Promise<void> {
     if (this.snapshot.status === "disposed") {
       return;
@@ -216,14 +217,14 @@ export class SessionCoordinator {
         acpPort = processManager.currentPort;
       }
     } catch (error) {
-      throw this.toLayerTaggedError(error, "TRANSPORT_ERROR");
+      throw toLayerTaggedError(error, "TRANSPORT_ERROR");
     }
 
     let transport: AcpTransport;
     try {
       transport = this.deps.createTransport();
     } catch (error) {
-      throw this.toLayerTaggedError(error, "TRANSPORT_ERROR");
+      throw toLayerTaggedError(error, "TRANSPORT_ERROR");
     }
     this.transport = transport;
 
@@ -235,7 +236,7 @@ export class SessionCoordinator {
     try {
       protocol = this.deps.createProtocol(transport);
     } catch (error) {
-      throw this.toLayerTaggedError(error, "PROTOCOL_ERROR");
+      throw toLayerTaggedError(error, "PROTOCOL_ERROR");
     }
     this.protocol = protocol;
 
@@ -247,7 +248,7 @@ export class SessionCoordinator {
       try {
         await transport.connect(connectOptions);
       } catch (error) {
-        throw this.toLayerTaggedError(error, "TRANSPORT_ERROR");
+        throw toLayerTaggedError(error, "TRANSPORT_ERROR");
       }
 
       this.updateSnapshot(
@@ -279,14 +280,17 @@ export class SessionCoordinator {
           authMethods?: Array<{ id?: string }>;
         };
       } catch (error) {
-        throw this.toLayerTaggedError(error, "PROTOCOL_ERROR");
+        throw toLayerTaggedError(error, "PROTOCOL_ERROR");
       }
 
       if (!initResult.isAuthenticated) {
-        const availableMethodIds = this.extractAuthMethodIds(
-          initResult.authMethods,
-        );
-        const authMethodOrder = this.resolveAuthMethodOrder(availableMethodIds);
+        const availableMethodIds = extractAuthMethodIds(initResult.authMethods);
+        const preferredMethodIds =
+          this.deps.resolveAuthMethodOrder?.(availableMethodIds) ?? [];
+        const authMethodOrder = resolveAuthMethodOrder({
+          availableMethodIds,
+          preferredMethodIds,
+        });
         let lastAuthError: Error | null = null;
         let authenticated = false;
 
@@ -307,9 +311,9 @@ export class SessionCoordinator {
 
         if (!authenticated) {
           if (lastAuthError) {
-            throw this.toLayerTaggedError(lastAuthError, "AUTH_ERROR");
+            throw toLayerTaggedError(lastAuthError, "AUTH_ERROR");
           }
-          throw this.toLayerTaggedError(
+          throw toLayerTaggedError(
             new Error("ACP authentication failed: no supported auth methods"),
             "AUTH_ERROR",
           );
@@ -324,7 +328,7 @@ export class SessionCoordinator {
         sessionSettings =
           this.deps.runtimeConfigApplier.buildSessionSettings(options);
       } catch (error) {
-        throw this.toLayerTaggedError(error, "PROTOCOL_ERROR");
+        throw toLayerTaggedError(error, "PROTOCOL_ERROR");
       }
 
       let sessionId: string;
@@ -337,7 +341,7 @@ export class SessionCoordinator {
             settings: sessionSettings,
           });
         } catch (error) {
-          throw this.toLayerTaggedError(error, "PROTOCOL_ERROR");
+          throw toLayerTaggedError(error, "PROTOCOL_ERROR");
         }
         sessionId = options.sessionId;
       } else {
@@ -349,11 +353,11 @@ export class SessionCoordinator {
             settings: sessionSettings,
           })) as { sessionId?: string };
         } catch (error) {
-          throw this.toLayerTaggedError(error, "PROTOCOL_ERROR");
+          throw toLayerTaggedError(error, "PROTOCOL_ERROR");
         }
 
         if (!sessionResult.sessionId) {
-          throw this.toLayerTaggedError(
+          throw toLayerTaggedError(
             new Error("session/new did not return sessionId"),
             "PROTOCOL_ERROR",
           );
@@ -368,7 +372,7 @@ export class SessionCoordinator {
           options,
         );
       } catch (error) {
-        throw this.toLayerTaggedError(error, "PROTOCOL_ERROR");
+        throw toLayerTaggedError(error, "PROTOCOL_ERROR");
       }
 
       this.updateSnapshot(
@@ -383,7 +387,7 @@ export class SessionCoordinator {
         "ready",
       );
     } catch (err: unknown) {
-      const taggedError = this.ensureLayerTag(err, "PROTOCOL_ERROR");
+      const taggedError = ensureLayerTag(err, "PROTOCOL_ERROR");
       const message = normalizeErrorMessage(taggedError);
       await this.teardownConnection(false);
       this.updateSnapshot(
@@ -403,7 +407,7 @@ export class SessionCoordinator {
     options: RunOptions,
   ): Promise<void> {
     if (!this.protocol || !this.snapshot.sessionId) {
-      throw this.toLayerTaggedError(
+      throw toLayerTaggedError(
         new Error("No active protocol/session for reusable connection"),
         "PROTOCOL_ERROR",
       );
@@ -411,171 +415,35 @@ export class SessionCoordinator {
 
     try {
       const cwd = options.cwd ?? process.cwd();
-      const sessionSettings =
-        this.deps.runtimeConfigApplier.buildSessionSettings(options);
-      const modeChanged =
-        this.snapshot.connectedMode !== null &&
-        this.snapshot.connectedMode !== options.mode;
-
-      if (!options.sessionId) {
-        // New conversation (no sessionId) — create a fresh server-side session
-        // to avoid inheriting plan/todo state from the previous session.
-        const sessionResult = (await this.protocol.sendRequest("session/new", {
-          cwd,
-          mcpServers: EMPTY_MCP_SERVERS,
-          settings: sessionSettings,
-        })) as { sessionId?: string };
-
-        if (!sessionResult.sessionId) {
-          throw new Error("session/new did not return sessionId");
-        }
-
-        this.updateSnapshot(
-          {
-            ...this.snapshot,
-            sessionId: sessionResult.sessionId,
-          },
-          "ready",
-        );
-      } else if (options.sessionId !== this.snapshot.sessionId) {
-        // Resuming a specific existing session — load it.
-        await this.protocol.sendRequest("session/load", {
-          sessionId: options.sessionId,
-          cwd,
-          mcpServers: EMPTY_MCP_SERVERS,
-          settings: sessionSettings,
-        });
-
-        this.updateSnapshot(
-          {
-            ...this.snapshot,
-            sessionId: options.sessionId,
-          },
-          "ready",
-        );
-      } else if (modeChanged) {
-        // Same session id but different mode (for example plan -> smart/default):
-        // reload session settings so mode-specific prompts (append_system_prompt)
-        // do not leak into the next run.
-        await this.protocol.sendRequest("session/load", {
-          sessionId: options.sessionId,
-          cwd,
-          mcpServers: EMPTY_MCP_SERVERS,
-          settings: sessionSettings,
-        });
-      }
+      const recovery = await recoverReusableSession({
+        options,
+        currentSessionId: this.snapshot.sessionId,
+        currentMode: this.snapshot.connectedMode,
+        sendRequest: (method, params) => this.protocol!.sendRequest(method, params),
+        buildSessionSettings: (runOptions) =>
+          this.deps.runtimeConfigApplier.buildSessionSettings(runOptions),
+        cwd,
+        mcpServers: EMPTY_MCP_SERVERS,
+      });
 
       await this.deps.runtimeConfigApplier.applySessionRuntimeSettings(
         this.protocol,
-        this.snapshot.sessionId!,
+        recovery.sessionId,
         options,
       );
 
       this.updateSnapshot(
         {
           ...this.snapshot,
+          sessionId: recovery.sessionId,
           connectedMode: options.mode,
           lastError: null,
         },
         "ready",
       );
     } catch (error) {
-      throw this.ensureLayerTag(error, "PROTOCOL_ERROR");
+      throw ensureLayerTag(error, "PROTOCOL_ERROR");
     }
-  }
-
-  private extractAuthMethodIds(
-    authMethods: Array<{ id?: string }> | undefined,
-  ): string[] {
-    if (!Array.isArray(authMethods)) {
-      return [];
-    }
-
-    const methodIds: string[] = [];
-    const seen = new Set<string>();
-    for (const method of authMethods) {
-      if (!method || typeof method.id !== "string") {
-        continue;
-      }
-      const id = method.id.trim();
-      if (!id || seen.has(id)) {
-        continue;
-      }
-      seen.add(id);
-      methodIds.push(id);
-    }
-    return methodIds;
-  }
-
-  private resolveAuthMethodOrder(availableMethodIds: string[]): string[] {
-    const preferred =
-      this.deps.resolveAuthMethodOrder?.(availableMethodIds) ?? [];
-    const fallbackDefaults = ["oauth-iflow", "iflow", "openai-compatible"];
-    const requested = [
-      ...preferred,
-      ...fallbackDefaults,
-      ...availableMethodIds,
-    ];
-
-    const availableSet = new Set(availableMethodIds);
-    const order: string[] = [];
-    const seen = new Set<string>();
-
-    for (const methodId of requested) {
-      if (!methodId || seen.has(methodId)) {
-        continue;
-      }
-      if (availableSet.size > 0 && !availableSet.has(methodId)) {
-        continue;
-      }
-      seen.add(methodId);
-      order.push(methodId);
-    }
-
-    if (order.length > 0) {
-      return order;
-    }
-
-    return availableMethodIds.length > 0 ? [...availableMethodIds] : ["iflow"];
-  }
-
-  private ensureLayerTag(
-    error: unknown,
-    fallbackLayer: "TRANSPORT_ERROR" | "AUTH_ERROR" | "PROTOCOL_ERROR",
-  ): Error {
-    const message = normalizeErrorMessage(error);
-    if (this.hasKnownLayerTag(message)) {
-      return error instanceof Error ? error : new Error(message);
-    }
-    return this.toLayerTaggedError(error, fallbackLayer);
-  }
-
-  private toLayerTaggedError(
-    error: unknown,
-    layer: "TRANSPORT_ERROR" | "AUTH_ERROR" | "PROTOCOL_ERROR",
-  ): Error {
-    const normalized = normalizeErrorMessage(error);
-    const prefixed = this.hasKnownLayerTag(normalized)
-      ? normalized
-      : `[${layer}] ${normalized}`;
-    const message =
-      layer === "AUTH_ERROR" && !/iflow login/i.test(prefixed)
-        ? `${prefixed} ${AUTH_RECOVERY_ACTION}`
-        : prefixed;
-
-    if (error instanceof Error && error.message === message) {
-      return error;
-    }
-
-    if (error instanceof Error) {
-      return new Error(message, { cause: error });
-    }
-
-    return new Error(message);
-  }
-
-  private hasKnownLayerTag(message: string): boolean {
-    return /\[(TRANSPORT_ERROR|AUTH_ERROR|PROTOCOL_ERROR)\]/.test(message);
   }
 
   private handleTransportClosed(error?: Error): void {
