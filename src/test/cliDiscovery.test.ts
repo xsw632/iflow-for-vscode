@@ -1,4 +1,5 @@
 import * as assert from 'assert';
+import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -13,9 +14,44 @@ import {
   type DiscoveryAttemptDiagnostic,
 } from '../cliDiscovery';
 
+const mutableChildProcess: typeof cp = require('child_process');
+const mutableFs: typeof fs = require('fs');
+
 type MaybePromise<T> = T | Promise<T>;
 
 type EnvOverrides = Record<string, string | undefined>;
+type ExecCallback = (
+  error: cp.ExecException | null,
+  stdout: string,
+  stderr: string,
+) => void;
+type ExecFileCallback = (
+  error: cp.ExecFileException | null,
+  stdout: string,
+  stderr: string,
+) => void;
+
+interface MockCommandResponse {
+  error?: Error;
+  stdout?: string;
+  stderr?: string;
+}
+
+interface RunDiscoveryMockOptions {
+  platform: NodeJS.Platform;
+  env?: EnvOverrides;
+  execResponses?: Record<string, MockCommandResponse>;
+  execFileResponses?: Record<string, MockCommandResponse>;
+  executableCandidates?: string[];
+  invoke?: () => Promise<string | null>;
+}
+
+interface RunDiscoveryMockResult {
+  result: Awaited<ReturnType<typeof findIFlowPathWithDiagnostics>>;
+  execCalls: string[];
+  execFileCalls: string[];
+  crossPlatformPath: string | null;
+}
 
 async function withPatchedPlatform<T>(
   platform: NodeJS.Platform,
@@ -65,23 +101,130 @@ async function withPatchedProperty<T extends object, K extends keyof T, R>(
   value: T[K],
   run: () => MaybePromise<R>,
 ): Promise<R> {
-  const ownDescriptor = Object.getOwnPropertyDescriptor(target, key);
-  Object.defineProperty(target, key, {
-    configurable: true,
-    enumerable: ownDescriptor?.enumerable ?? true,
-    writable: true,
-    value,
-  });
+  const record = target as unknown as Record<PropertyKey, unknown>;
+  const keyRef = key as unknown as PropertyKey;
+  const hadOwn = Object.prototype.hasOwnProperty.call(record, keyRef);
+  const original = record[keyRef];
+  record[keyRef] = value;
 
   try {
     return await run();
   } finally {
-    if (ownDescriptor) {
-      Object.defineProperty(target, key, ownDescriptor);
+    if (hadOwn) {
+      record[keyRef] = original;
     } else {
-      delete (target as unknown as Record<string, unknown>)[String(key)];
+      delete record[keyRef];
     }
   }
+}
+
+function toNormalizedPath(candidate: fs.PathLike): string {
+  if (typeof candidate === 'string') {
+    return candidate.replace(/\\/g, '/').toLowerCase();
+  }
+  if (Buffer.isBuffer(candidate)) {
+    return candidate.toString('utf8').replace(/\\/g, '/').toLowerCase();
+  }
+  return candidate.toString().replace(/\\/g, '/').toLowerCase();
+}
+
+async function runDiscoveryMock(
+  options: RunDiscoveryMockOptions,
+): Promise<RunDiscoveryMockResult> {
+  const execCalls: string[] = [];
+  const execFileCalls: string[] = [];
+  const execResponses = options.execResponses ?? {};
+  const execFileResponses = options.execFileResponses ?? {};
+  const executableCandidates = new Set(
+    (options.executableCandidates ?? []).map((candidate) =>
+      candidate.replace(/\\/g, '/').toLowerCase(),
+    ),
+  );
+
+  const mockExec = ((
+    command: string,
+    optionsOrCallback?: cp.ExecOptions | ExecCallback,
+    maybeCallback?: ExecCallback,
+  ) => {
+    const callback =
+      typeof optionsOrCallback === 'function'
+        ? optionsOrCallback
+        : maybeCallback;
+    execCalls.push(command);
+    const response = execResponses[command] ?? {
+      error: new Error(`Unexpected exec command: ${command}`),
+    };
+    callback?.(
+      (response.error ?? null) as cp.ExecException | null,
+      response.stdout ?? '',
+      response.stderr ?? '',
+    );
+    return {} as cp.ChildProcess;
+  }) as typeof cp.exec;
+
+  const mockExecFile = ((
+    file: string,
+    argsOrOptions?: ReadonlyArray<string> | cp.ExecFileOptions | ExecFileCallback,
+    optionsOrCallback?: cp.ExecFileOptions | ExecFileCallback,
+    maybeCallback?: ExecFileCallback,
+  ) => {
+    const args = Array.isArray(argsOrOptions) ? argsOrOptions : [];
+    const callbackCandidate = Array.isArray(argsOrOptions)
+      ? optionsOrCallback
+      : argsOrOptions;
+    const callback =
+      typeof callbackCandidate === 'function'
+        ? callbackCandidate
+        : maybeCallback;
+    const commandKey = `${file} ${args.join(' ')}`.trim();
+    execFileCalls.push(commandKey);
+    const response = execFileResponses[commandKey] ?? {
+      error: new Error(`Unexpected execFile command: ${commandKey}`),
+    };
+    callback?.(
+      (response.error ?? null) as cp.ExecFileException | null,
+      response.stdout ?? '',
+      response.stderr ?? '',
+    );
+    return {} as cp.ChildProcess;
+  }) as typeof cp.execFile;
+
+  const mockExistsSync = ((candidate: fs.PathLike) =>
+    executableCandidates.has(toNormalizedPath(candidate))) as typeof fs.existsSync;
+
+  const mockStatSync = ((candidate: fs.PathLike) => {
+    if (!mockExistsSync(candidate)) {
+      throw new Error(`ENOENT: ${candidate.toString()}`);
+    }
+    return {
+      isFile: () => true,
+    } as fs.Stats;
+  }) as typeof fs.statSync;
+
+  const mockAccessSync = ((candidate: fs.PathLike) => {
+    if (!mockExistsSync(candidate)) {
+      throw new Error(`ENOENT: ${candidate.toString()}`);
+    }
+  }) as typeof fs.accessSync;
+
+  return withPatchedPlatform(options.platform, () =>
+    withPatchedEnv(options.env ?? {}, () =>
+      withPatchedProperty(mutableChildProcess, 'exec', mockExec, () =>
+        withPatchedProperty(mutableChildProcess, 'execFile', mockExecFile, () =>
+          withPatchedProperty(mutableFs, 'existsSync', mockExistsSync, () =>
+            withPatchedProperty(mutableFs, 'statSync', mockStatSync, () =>
+              withPatchedProperty(mutableFs, 'accessSync', mockAccessSync, async () => ({
+                result: await findIFlowPathWithDiagnostics(() => {}),
+                execCalls,
+                execFileCalls,
+                crossPlatformPath: options.invoke ? await options.invoke() : null,
+              })),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 suite('cliDiscovery test harness', () => {
@@ -197,7 +340,10 @@ suite('cliDiscovery path lookup branches', () => {
       executableCandidates: ['C:\\Users\\demo\\AppData\\Roaming\\npm\\iflow.cmd'],
     });
 
-    assert.strictEqual(output.result.path, 'C:\\Users\\demo\\AppData\\Roaming\\npm\\iflow.cmd');
+    assert.strictEqual(
+      output.result.path?.replace(/\\/g, '/'),
+      'C:/Users/demo/AppData/Roaming/npm/iflow.cmd',
+    );
     assert.strictEqual(output.result.summary, null);
     assert.ok(
       output.result.diagnostics.some((d) => d.target === 'where iflow' && d.source === 'PATH_LOOKUP'),
