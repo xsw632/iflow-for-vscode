@@ -1,4 +1,6 @@
 import * as assert from "assert";
+import * as fs from "fs";
+import * as path from "path";
 import { AcpClient } from "../acpClient";
 import { InactivityGuard } from "../acp/inactivityGuard";
 import {
@@ -529,6 +531,7 @@ suite("AcpClient", () => {
     let ended = false;
     let error: string | null = null;
     let promptCallCount = 0;
+    const promptPayloads: unknown[] = [];
 
     (client as any).runExecutor.deps.getConfig = <T>(
       key: string,
@@ -549,6 +552,7 @@ suite("AcpClient", () => {
     fakeProtocol.sendRequest = async (method: string, params?: unknown) => {
       if (method === "session/prompt") {
         promptCallCount += 1;
+        promptPayloads.push(params);
 
         if (promptCallCount === 1) {
           fakeProtocol.simulateUpdate({
@@ -610,6 +614,11 @@ suite("AcpClient", () => {
       `expected at least 2 session/prompt calls, got ${promptCallCount}`,
     );
     assert.ok(fakeProtocol.requests.some((r) => r.method === "session/cancel"));
+    assert.ok(promptPayloads.length >= 2);
+    const recoveryPromptText = ((promptPayloads[1] as any)?.prompt?.[0]?.text ??
+      "") as string;
+    assert.ok(recoveryPromptText.includes("<system-reminder>"));
+    assert.ok(recoveryPromptText.includes("automatically cancelled"));
     assert.ok(
       chunks.some(
         (chunk) =>
@@ -681,6 +690,39 @@ suite("AcpClient", () => {
     );
   });
 
+  test("connectWithRecovery does not recover for non-missing-session errors", async () => {
+    const baseOptions = {
+      prompt: "hello",
+      attachedFiles: [],
+      mode: "default",
+      think: false,
+      model: "GLM-4.7" as any,
+      sessionId: "persisted-1",
+    };
+    let recoverCalls = 0;
+
+    await assert.rejects(
+      connectWithRecovery(baseOptions as any, {
+        ensureConnected: async () => {
+          throw new Error("connection reset by peer");
+        },
+        isMissingSessionError: () => false,
+        recoverMissingSession: async () => {
+          recoverCalls += 1;
+          return {
+            protocol: {
+              sendRequest: async () => ({}),
+            } as any,
+            sessionId: "fresh-session-2",
+          };
+        },
+        log: () => {},
+      }),
+    );
+
+    assert.strictEqual(recoverCalls, 0);
+  });
+
   test("buildInactivityRecoveryPrompt keeps stable warning and reminder tokens", () => {
     const built = buildInactivityRecoveryPrompt(
       {
@@ -699,6 +741,19 @@ suite("AcpClient", () => {
     );
     assert.ok(
       built.reminderPrompt.includes('sub-agent "Launch agent(frontend-tester): Validate game"'),
+    );
+  });
+
+  test("run executor facade stays under 500-line SIZE-01 limit", () => {
+    const executorPath = path.resolve(
+      __dirname,
+      "../../src/acp/client/acpRunExecutor.ts",
+    );
+    const source = fs.readFileSync(executorPath, "utf8");
+    const lineCount = (source.match(/\n/g) ?? []).length;
+    assert.ok(
+      lineCount < 500,
+      `Expected src/acp/client/acpRunExecutor.ts to stay under 500 lines, got ${lineCount}`,
     );
   });
 
