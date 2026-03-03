@@ -78,10 +78,18 @@ Each task was committed atomically:
 - **Verification:** `npm run test:unit -- --grep "AcpClient"` and `wc -l src/acp/client/acpRunExecutor.ts`
 - **Committed in:** `486ceea`
 
+**2. [Rule 3 - Blocking] Unblocked STATE/ROADMAP progress updates when gsd-tools parser did not match current STATE schema**
+- **Found during:** Post-task state update
+- **Issue:** `state advance-plan`, `state update-progress`, `state record-metric`, and `state record-session` returned parse errors because expected sections/fields were absent in existing `STATE.md` format.
+- **Fix:** Kept decision/requirements updates through gsd-tools, then manually updated current position/session/progress tables in `STATE.md` and plan progress row in `ROADMAP.md`.
+- **Files modified:** `.planning/STATE.md`, `.planning/ROADMAP.md`
+- **Verification:** Manual file inspection confirms Phase 2 shows `1/4` plans complete and current position points to next plan (`02`).
+- **Committed in:** `505121b`
+
 ---
 
-**Total deviations:** 1 auto-fixed (1 bug)
-**Impact on plan:** No scope change; fix only corrected the new regression harness to validate intended behavior.
+**Total deviations:** 2 auto-fixed (1 bug, 1 blocking)
+**Impact on plan:** No product scope change; fixes were required to stabilize regression assertions and preserve planning metadata continuity.
 
 ## Authentication Gates
 None.
