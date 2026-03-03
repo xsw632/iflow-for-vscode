@@ -11,6 +11,40 @@ import {
   type DiscoveryAttemptDiagnostic,
 } from '../cliDiscovery';
 
+suite('cliDiscovery test harness', () => {
+  test('restores process.platform when patched callback throws', async () => {
+    const originalPlatform = process.platform;
+
+    await assert.rejects(async () =>
+      withPatchedPlatform('win32', async () => {
+        assert.strictEqual(process.platform, 'win32');
+        throw new Error('intentional-failure');
+      }),
+    );
+
+    assert.strictEqual(process.platform, originalPlatform);
+  });
+
+  test('restores process.env keys after temporary override', async () => {
+    const originalShell = process.env.SHELL;
+    delete process.env.IFLOW_TMP_ENV;
+
+    await withPatchedEnv(
+      {
+        SHELL: '/tmp/iflow-shell',
+        IFLOW_TMP_ENV: 'temporary',
+      },
+      () => {
+        assert.strictEqual(process.env.SHELL, '/tmp/iflow-shell');
+        assert.strictEqual(process.env.IFLOW_TMP_ENV, 'temporary');
+      },
+    );
+
+    assert.strictEqual(process.env.SHELL, originalShell);
+    assert.strictEqual(process.env.IFLOW_TMP_ENV, undefined);
+  });
+});
+
 suite('cliDiscovery PowerShell Parsing', () => {
   let tempDir: string;
 
