@@ -5,7 +5,10 @@ export function isReadySignal(output: string): boolean {
   return normalized.includes('listening')
     || normalized.includes('ready')
     || normalized.includes('started websocket service')
-    || normalized.includes('server started');
+    || normalized.includes('server started')
+    || normalized.includes('acp server running')
+    || normalized.includes('running at ws://')
+    || normalized.includes('running at wss://');
 }
 
 export function isAddressInUseError(error: unknown): boolean {
@@ -21,6 +24,7 @@ export function extractManagedPort(output: string): number | null {
     /\busing port[:\s]+(\d{2,5})\b/i,
     /\bfound available port\s+(\d{2,5})\b/i,
     /\blistening(?:\s+on)?(?:\s+port)?[:\s]+(\d{2,5})\b/i,
+    /\b(?:ws|wss):\/\/[^\s]+:(\d{2,5})(?:\/[^\s]*)?\b/i,
   ];
 
   for (const pattern of patterns) {

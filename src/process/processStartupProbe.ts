@@ -10,7 +10,6 @@ import {
 } from "./webSocketReadinessProbe";
 
 const PROCESS_STARTUP_TIMEOUT_MS = 30_000;
-const PROCESS_READY_FALLBACK_MS = 2_000;
 const PROCESS_INIT_DELAY_MS = 500;
 const STARTUP_LOG_BUFFER_MAX_LINES = 20;
 const PROCESS_WS_MAX_ATTEMPTS = 8;
@@ -44,7 +43,7 @@ export interface ProcessStartupProbeHandle {
   ready: Promise<number>;
 }
 
-export type ProcessStartupReadyVia = "signal" | "websocket" | "fallback";
+export type ProcessStartupReadyVia = "signal" | "websocket";
 
 export interface ProcessStartupResult {
   process: cp.ChildProcess;
@@ -146,6 +145,8 @@ function createStartupProbe(
     let effectivePort = port;
     let initTimeout: NodeJS.Timeout | null = null;
     let readySignalSeen = false;
+    let readinessAttempts = 0;
+    let loggedWsRetryWarning = false;
 
     const clearInitTimeout = (): void => {
       if (!initTimeout) {
@@ -153,6 +154,15 @@ function createStartupProbe(
       }
       clearTimeout(initTimeout);
       initTimeout = null;
+    };
+
+    const scheduleWebSocketReadinessCheck = (): void => {
+      clearInitTimeout();
+      initTimeout = setTimeout(() => {
+        if (!started && !settled && !childProcess.killed && !deps.isCancelled()) {
+          void checkWebSocketReady();
+        }
+      }, PROCESS_WS_RETRY_INTERVAL_MS);
     };
 
     const settleResolve = (
@@ -246,30 +256,34 @@ function createStartupProbe(
         maxAttempts: PROCESS_WS_MAX_ATTEMPTS,
         retryIntervalMs: PROCESS_WS_RETRY_INTERVAL_MS,
         handshakeTimeoutMs: PROCESS_WS_HANDSHAKE_TIMEOUT_MS,
-        connectionTimeoutMs: PROCESS_READY_FALLBACK_MS,
+        connectionTimeoutMs: PROCESS_WS_HANDSHAKE_TIMEOUT_MS,
         isCancelled: () =>
           started || settled || childProcess.killed || deps.isCancelled(),
         onFirstFailure: (message) => {
           deps.log(`[WebSocket check] Attempt 1 failed: ${message}`);
         },
       });
+      readinessAttempts += readiness.attempts;
 
       if (readiness.ready) {
         if (!started) {
           deps.log(
             `[process ready] WebSocket connection confirmed on port ${effectivePort} ` +
-              `after ${readiness.attempts} attempt(s)`,
+              `after ${readinessAttempts} attempt(s)`,
           );
-          settleResolve("websocket", readiness.attempts);
+          settleResolve("websocket", readinessAttempts);
         }
         return;
       }
 
       if (!started && !settled) {
-        deps.log(
-          `[process warning] WebSocket not ready after ${PROCESS_WS_MAX_ATTEMPTS} attempts, proceeding anyway`,
-        );
-        settleResolve("fallback", readiness.attempts);
+        if (!loggedWsRetryWarning) {
+          loggedWsRetryWarning = true;
+          deps.log(
+            `[process warning] WebSocket not ready after ${readinessAttempts} attempt(s); continuing to wait for readiness confirmation`,
+          );
+        }
+        scheduleWebSocketReadinessCheck();
       }
     };
 

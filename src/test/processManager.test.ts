@@ -5,7 +5,11 @@ import {
   startManagedProcessWithProbe,
 } from '../process/processStartupProbe';
 import { ProcessManager } from '../processManager';
-import { buildStartupFailureMessage } from '../process/startupSignals';
+import {
+  buildStartupFailureMessage,
+  extractManagedPort,
+  isReadySignal,
+} from '../process/startupSignals';
 
 class FakeChildProcess extends EventEmitter {
   stdout = new EventEmitter();
@@ -204,6 +208,13 @@ suite('ProcessManager', () => {
     assert.ok(message.includes('[STARTUP_ERROR]'));
     assert.ok(!message.includes('/usr/local/bin/node'));
     assert.ok(message.includes('verify iflow.nodePath/config and retry'));
+  });
+
+  test('recognizes the current CLI ACP banner as ready and extracts its port', () => {
+    const output = '🚀 iFlow ACP Server running at ws://127.0.0.1:30604/acp';
+
+    assert.strictEqual(isReadySignal(output), true);
+    assert.strictEqual(extractManagedPort(output), 30604);
   });
 
   test('proactively falls back to an available port when configured port is occupied', async () => {

@@ -60,6 +60,7 @@ suite('ProcessManager WebSocket Readiness', () => {
   let processManager: ProcessManager;
   let fakeProcess: FakeChildProcess;
   let wsBehavior: WsBehavior;
+  let wsBehaviorQueue: WsBehavior[];
   let wsAttempts: number;
   let logs: string[];
   let spawnedArgs: string[] | null;
@@ -67,6 +68,7 @@ suite('ProcessManager WebSocket Readiness', () => {
   setup(() => {
     fakeProcess = new FakeChildProcess();
     wsBehavior = 'open';
+    wsBehaviorQueue = [];
     wsAttempts = 0;
     logs = [];
     spawnedArgs = null;
@@ -81,7 +83,8 @@ suite('ProcessManager WebSocket Readiness', () => {
         }) as any,
         createWebSocket: (() => {
           wsAttempts += 1;
-          return new FakeWebSocket(wsBehavior) as any;
+          const nextBehavior = wsBehaviorQueue.shift() ?? wsBehavior;
+          return new FakeWebSocket(nextBehavior) as any;
         }) as any,
         isPortAvailable: async () => true,
         findAvailablePort: async () => 38080,
@@ -102,6 +105,21 @@ suite('ProcessManager WebSocket Readiness', () => {
 
     setTimeout(() => {
       fakeProcess.stdout.emitData('listening on port 8090\n');
+    }, 20);
+
+    await assert.doesNotReject(startPromise);
+    assert.ok(wsAttempts <= 1);
+  });
+
+  test('startManagedProcess resolves when stdout has ACP ready banner', async () => {
+    const startPromise = processManager.startManagedProcess(
+      '/usr/bin/node',
+      8090,
+      '/usr/lib/iflow/entry.js',
+    );
+
+    setTimeout(() => {
+      fakeProcess.stdout.emitData('🚀 iFlow ACP Server running at ws://127.0.0.1:8090/acp\n');
     }, 20);
 
     await assert.doesNotReject(startPromise);
@@ -139,6 +157,40 @@ suite('ProcessManager WebSocket Readiness', () => {
     assert.strictEqual(startup.port, 8091);
   });
 
+  test('startup probe keeps waiting when websocket probe misses a late CLI ready banner', async function() {
+    this.timeout(6_000);
+    wsBehavior = 'error';
+
+    const startupPromise = startManagedProcessWithProbe({
+      nodePath: '/usr/bin/node',
+      port: 8097,
+      iflowScript: '/usr/lib/iflow/entry.js',
+      spawnProcess: (() => fakeProcess) as any,
+      createWebSocket: (() => {
+        wsAttempts += 1;
+        return new FakeWebSocket('error') as any;
+      }) as any,
+      log: (message) => logs.push(message),
+      isCancelled: () => false,
+    });
+
+    setTimeout(() => {
+      fakeProcess.stdout.emitData(
+        '🚀 iFlow ACP Server running at ws://127.0.0.1:8097/acp\n',
+      );
+    }, 2600);
+
+    const startup = await startupPromise;
+    assert.strictEqual(startup.readyVia, 'signal');
+    assert.strictEqual(startup.port, 8097);
+    assert.ok(wsAttempts > 8);
+    assert.ok(
+      logs.some((line) =>
+        line.includes('continuing to wait for readiness confirmation'),
+      ),
+    );
+  });
+
   test('process exit during startup rejects with helpful error', async () => {
     const startPromise = processManager.startManagedProcess(
       '/usr/bin/node',
@@ -169,7 +221,8 @@ suite('ProcessManager WebSocket Readiness', () => {
     assert.strictEqual(fakeProcess.killed, true);
   });
 
-  test('WebSocket probe logs first error attempt', async () => {
+  test('WebSocket probe logs first error attempt', async function() {
+    this.timeout(6_000);
     wsBehavior = 'error';
 
     const startPromise = processManager.startManagedProcess(
@@ -179,11 +232,51 @@ suite('ProcessManager WebSocket Readiness', () => {
     );
 
     setTimeout(() => {
-      fakeProcess.stdout.emitData('ready\n');
-    }, 1200);
+      fakeProcess.stdout.emitData(
+        '🚀 iFlow ACP Server running at ws://127.0.0.1:8094/acp\n',
+      );
+    }, 2600);
 
     await assert.doesNotReject(startPromise);
     assert.ok(logs.some((line) => line.includes('[WebSocket check] Attempt 1 failed')));
+  });
+
+  test('startup probe keeps waiting across probe windows until websocket opens', async function() {
+    this.timeout(6_000);
+    wsBehavior = 'error';
+    wsBehaviorQueue = [
+      'error',
+      'error',
+      'error',
+      'error',
+      'error',
+      'error',
+      'error',
+      'error',
+      'open',
+    ];
+
+    const startup = await startManagedProcessWithProbe({
+      nodePath: '/usr/bin/node',
+      port: 8097,
+      iflowScript: '/usr/lib/iflow/entry.js',
+      spawnProcess: (() => fakeProcess) as any,
+      createWebSocket: (() => {
+        wsAttempts += 1;
+        const nextBehavior = wsBehaviorQueue.shift() ?? wsBehavior;
+        return new FakeWebSocket(nextBehavior) as any;
+      }) as any,
+      log: (message) => logs.push(message),
+      isCancelled: () => false,
+    });
+
+    assert.strictEqual(startup.readyVia, 'websocket');
+    assert.ok(startup.readinessAttempts > 8);
+    assert.ok(
+      logs.some((line) =>
+        line.includes('continuing to wait for readiness confirmation'),
+      ),
+    );
   });
 
   test('startManagedProcess includes --stream when enableStream=true', async () => {
