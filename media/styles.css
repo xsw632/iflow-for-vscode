@@ -1337,6 +1337,7 @@ select:focus-visible,
   font-family: inherit;
   cursor: pointer;
   outline: none;
+  field-sizing: content;
 }
 
 .dropdown-mini option {
