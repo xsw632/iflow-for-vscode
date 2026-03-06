@@ -9,8 +9,6 @@ import {
 } from "./cliDiscovery";
 import {
   PROCESS_FORCE_KILL_TIMEOUT_MS,
-  PROCESS_WS_MAX_ATTEMPTS,
-  PROCESS_WS_RETRY_INTERVAL_MS,
 } from "./constants/runtime";
 import {
   findAvailablePort,
@@ -18,22 +16,13 @@ import {
   resolveStartupPort,
 } from "./process/portDiscovery";
 import {
-  buildStartupFailureMessage,
-  extractManagedPort,
   isAddressInUseError,
-  isReadySignal,
 } from "./process/startupSignals";
 import {
-  waitForWebSocketReadiness,
-  type WebSocketFactory,
-} from "./process/webSocketReadinessProbe";
-
-// ── Process lifecycle constants ──────────────────────────────────────
-const PROCESS_STARTUP_TIMEOUT_MS = 30_000;
-const PROCESS_READY_FALLBACK_MS = 2_000;
-const PROCESS_INIT_DELAY_MS = 500;
-const STARTUP_LOG_BUFFER_MAX_LINES = 20;
-const PROCESS_WS_HANDSHAKE_TIMEOUT_MS = 1_000;
+  launchManagedProcess,
+  type SpawnProcessFn,
+} from "./process/processStartupProbe";
+import { type WebSocketFactory } from "./process/webSocketReadinessProbe";
 
 export interface ManualStartInfo {
   nodePath: string;
@@ -46,9 +35,8 @@ interface ProcessManagerConfig {
   port: number;
 }
 
-type SpawnFn = typeof cp.spawn;
 interface ProcessManagerDependencies {
-  spawn?: SpawnFn;
+  spawn?: SpawnProcessFn;
   createWebSocket?: WebSocketFactory;
   isPortAvailable?: (port: number) => Promise<boolean>;
   findAvailablePort?: () => Promise<number>;
@@ -64,7 +52,7 @@ export class ProcessManager {
     | undefined = undefined;
   // CLI path cache: undefined = not attempted, null = attempted & failed, string = success
   private _cachedIflowPath: string | null | undefined = undefined;
-  private readonly spawnProcess: SpawnFn;
+  private readonly spawnProcess: SpawnProcessFn;
   private readonly createWebSocket: WebSocketFactory;
   private readonly checkPortAvailable: (port: number) => Promise<boolean>;
   private readonly allocateAvailablePort: () => Promise<number>;
@@ -282,197 +270,35 @@ export class ProcessManager {
     cwd?: string,
     enableStream = true,
   ): Promise<number> {
-    this.log(
-      `Starting iFlow with Node: ${nodePath}, script: ${iflowScript}, port: ${port}, stream=${enableStream}`,
+    const startup = launchManagedProcess(
+      {
+        nodePath,
+        port,
+        iflowScript,
+        cwd,
+        enableStream,
+      },
+      {
+        spawnProcess: this.spawnProcess,
+        createWebSocket: this.createWebSocket,
+        log: this.log,
+      },
     );
-    this.log(
-      `Command: ${nodePath} ${iflowScript} --experimental-acp --port ${port}${enableStream ? " --stream" : ""}`,
-    );
 
-    return new Promise((resolve, reject) => {
-      const args = [iflowScript!, "--experimental-acp", "--port", String(port)];
-      if (enableStream) {
-        args.push("--stream");
-      }
-
-      // Buffer to collect output for error reporting
-      const stdoutBuffer: string[] = [];
-      const stderrBuffer: string[] = [];
-      this.managedProcess = this.spawnProcess(nodePath, args, {
-        cwd: cwd ?? process.cwd(),
-        env: { ...process.env },
-        stdio: ["pipe", "pipe", "pipe"],
-      });
-
-      let settled = false;
-      let started = false;
-      let effectivePort = port;
-
-      const settleResolve = () => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        started = true;
-        clearTimeout(timeout);
-        this.managedPort = effectivePort;
-        resolve(effectivePort);
-      };
-
-      const settleReject = (error: Error) => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        clearTimeout(timeout);
-        this.managedPort = null;
-        reject(error);
-      };
-
-      const ingestOutput = (output: string) => {
-        const parsedPort = extractManagedPort(output);
-        if (parsedPort !== null && parsedPort !== effectivePort) {
-          effectivePort = parsedPort;
-          this.log(
-            `Detected managed ACP port from CLI output: ${effectivePort}`,
-          );
-        }
-      };
-
-      const timeout = setTimeout(() => {
-        if (!started) {
-          settleReject(
-            new Error(
-              buildStartupFailureMessage(
-                null,
-                stdoutBuffer,
-                stderrBuffer,
-                effectivePort,
-                nodePath,
-                PROCESS_STARTUP_TIMEOUT_MS,
-              ),
-            ),
-          );
-        }
-      }, PROCESS_STARTUP_TIMEOUT_MS);
-
-      this.managedProcess.stdout?.on("data", (data: Buffer) => {
-        const output = data.toString();
-        ingestOutput(output);
-        stdoutBuffer.push(output);
-        if (stdoutBuffer.length > STARTUP_LOG_BUFFER_MAX_LINES) {
-          stdoutBuffer.shift();
-        }
-        this.log(`[iFlow stdout] ${output}`);
-        // Look for ready signal
-        if (isReadySignal(output)) {
-          if (!started) {
-            // Give it a moment to fully initialize
-            setTimeout(() => settleResolve(), PROCESS_INIT_DELAY_MS);
-          }
-        }
-      });
-
-      this.managedProcess.stderr?.on("data", (data: Buffer) => {
-        const output = data.toString();
-        ingestOutput(output);
-        stderrBuffer.push(output);
-        if (stderrBuffer.length > STARTUP_LOG_BUFFER_MAX_LINES) {
-          stderrBuffer.shift();
-        }
-        this.log(`[iFlow stderr] ${output}`);
-        // Some CLIs output ready messages to stderr
-        if (isReadySignal(output)) {
-          if (!started) {
-            setTimeout(() => settleResolve(), PROCESS_INIT_DELAY_MS);
-          }
-        }
-      });
-
-      this.managedProcess.on("error", (err) => {
-        this.log(`iFlow process error: ${err.message}`);
-        settleReject(new Error(`Failed to start iFlow: ${err.message}`));
-      });
-
-      // If no ready signal, try to connect via WebSocket to confirm server is ready
-      const checkWebSocketReady = async () => {
-        const readiness = await waitForWebSocketReadiness({
-          createWebSocket: this.createWebSocket,
-          getWebSocketUrl: () => `ws://localhost:${effectivePort}/acp`,
-          maxAttempts: PROCESS_WS_MAX_ATTEMPTS,
-          retryIntervalMs: PROCESS_WS_RETRY_INTERVAL_MS,
-          handshakeTimeoutMs: PROCESS_WS_HANDSHAKE_TIMEOUT_MS,
-          connectionTimeoutMs: PROCESS_READY_FALLBACK_MS,
-          isCancelled: () =>
-            started ||
-            settled ||
-            !this.managedProcess ||
-            this.managedProcess.killed,
-          onFirstFailure: (message) => {
-            this.log(`[WebSocket check] Attempt 1 failed: ${message}`);
-          },
-        });
-
-        if (readiness.ready) {
-          if (!started) {
-            this.log(
-              `[process ready] WebSocket connection confirmed on port ${effectivePort} ` +
-                `after ${readiness.attempts} attempt(s)`,
-            );
-            settleResolve();
-          }
-          return;
-        }
-
-        if (!started && !settled) {
-          this.log(
-            `[process warning] WebSocket not ready after ${PROCESS_WS_MAX_ATTEMPTS} attempts, proceeding anyway`,
-          );
-          settleResolve();
-        }
-      };
-
-      // Start WebSocket readiness check after a short delay
-      const initTimeout = setTimeout(() => {
-        if (!started && this.managedProcess && !this.managedProcess.killed) {
-          checkWebSocketReady();
-        }
-      }, PROCESS_INIT_DELAY_MS);
-
-      // Consolidated exit listener: handles rejection, cleanup, and timeout cancellation
-      this.managedProcess.on("exit", (code) => {
-        clearTimeout(initTimeout);
-        this.log(`iFlow process exited with code: ${code}`);
-        if (!started && !settled) {
-          settleReject(
-            new Error(
-              buildStartupFailureMessage(
-                code,
-                stdoutBuffer,
-                stderrBuffer,
-                effectivePort,
-                nodePath,
-                PROCESS_STARTUP_TIMEOUT_MS,
-              ),
-            ),
-          );
-        }
-
-        // Process has exited; ensure cached state is reset.
-        this.managedPort = null;
-
-        if (!started) {
-          // Log collected output for debugging
-          if (stdoutBuffer.length > 0) {
-            this.log(`[iFlow stdout buffer]\n${stdoutBuffer.join("")}`);
-          }
-          if (stderrBuffer.length > 0) {
-            this.log(`[iFlow stderr buffer]\n${stderrBuffer.join("")}`);
-          }
-        }
-        this.managedProcess = null;
-      });
+    this.managedProcess = startup.childProcess;
+    this.managedProcess.on("exit", () => {
+      this.managedProcess = null;
+      this.managedPort = null;
     });
+
+    try {
+      const effectivePort = await startup.ready;
+      this.managedPort = effectivePort;
+      return effectivePort;
+    } catch (error) {
+      this.managedPort = null;
+      throw error;
+    }
   }
 
   /**

@@ -97,10 +97,12 @@ suite('ProcessManager', () => {
     await assert.rejects(
       startPromise,
       (error: unknown) => {
-        assert.ok(error instanceof ProcessStartupProbeError);
+        if (!(error instanceof ProcessStartupProbeError)) {
+          return false;
+        }
         assert.strictEqual(error.port, 8090);
         assert.strictEqual(error.code, 1);
-        assert.ok(error.stderrBuffer.some((entry) => entry.includes('EADDRINUSE')));
+        assert.ok(error.stderrBuffer.some((entry: string) => entry.includes('EADDRINUSE')));
         return true;
       },
     );
@@ -244,5 +246,40 @@ suite('ProcessManager', () => {
     assert.notStrictEqual(spawnedPort, occupiedPort);
     assert.strictEqual(actualPort, spawnedPort);
     assert.strictEqual(manager.currentPort, spawnedPort);
+  });
+
+  test('clears managed state when the spawned process exits after startup', async () => {
+    const child = new FakeChildProcess();
+    const manager = new ProcessManager(
+      () => {},
+      () => {},
+      {
+        spawn: (() => child) as unknown as typeof import('child_process').spawn,
+        createWebSocket: (() => new FakeWebSocket(true) as never),
+        isPortAvailable: async () => true,
+      },
+    );
+
+    const startPromise = manager.startManagedProcess(
+      '/usr/bin/node',
+      8090,
+      '/tmp/iflow.js',
+      '/tmp',
+      true,
+    );
+
+    setImmediate(() => {
+      child.stdout.emit('data', Buffer.from('ready\n'));
+    });
+
+    const actualPort = await startPromise;
+    assert.strictEqual(actualPort, 8090);
+    assert.strictEqual(manager.hasProcess, true);
+    assert.strictEqual(manager.currentPort, 8090);
+
+    child.emitExit(0);
+
+    assert.strictEqual(manager.hasProcess, false);
+    assert.strictEqual(manager.currentPort, null);
   });
 });
