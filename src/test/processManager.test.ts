@@ -1,5 +1,9 @@
 import * as assert from 'assert';
 import { EventEmitter } from 'events';
+import {
+  ProcessStartupProbeError,
+  startManagedProcessWithProbe,
+} from '../process/processStartupProbe';
 import { ProcessManager } from '../processManager';
 import { buildStartupFailureMessage } from '../process/startupSignals';
 
@@ -49,6 +53,59 @@ class FakeWebSocket extends EventEmitter {
 }
 
 suite('ProcessManager', () => {
+  test('startup probe returns structured signal readiness details', async () => {
+    const child = new FakeChildProcess();
+    const startPromise = startManagedProcessWithProbe({
+      nodePath: '/usr/bin/node',
+      port: 8090,
+      iflowScript: '/tmp/iflow.js',
+      spawnProcess: (() => child) as unknown as typeof import('child_process').spawn,
+      createWebSocket: (() => new FakeWebSocket(true) as never),
+      log: () => {},
+      isCancelled: () => false,
+    });
+
+    setImmediate(() => {
+      child.stdout.emit('data', Buffer.from('Found available port 30604 on attempt 1\n'));
+      child.stdout.emit('data', Buffer.from('ready\n'));
+    });
+
+    const startup = await startPromise;
+    assert.strictEqual(startup.port, 30604);
+    assert.strictEqual(startup.readyVia, 'signal');
+    assert.strictEqual(startup.readinessAttempts, 0);
+    assert.strictEqual(startup.process, child);
+  });
+
+  test('startup probe exposes structured startup failure details', async () => {
+    const child = new FakeChildProcess();
+    const startPromise = startManagedProcessWithProbe({
+      nodePath: '/usr/bin/node',
+      port: 8090,
+      iflowScript: '/tmp/iflow.js',
+      spawnProcess: (() => child) as unknown as typeof import('child_process').spawn,
+      createWebSocket: (() => new FakeWebSocket(true) as never),
+      log: () => {},
+      isCancelled: () => false,
+    });
+
+    setImmediate(() => {
+      child.stderr.emit('data', Buffer.from('Error: listen EADDRINUSE: address already in use :::8090\n'));
+      child.emitExit(1);
+    });
+
+    await assert.rejects(
+      startPromise,
+      (error: unknown) => {
+        assert.ok(error instanceof ProcessStartupProbeError);
+        assert.strictEqual(error.port, 8090);
+        assert.strictEqual(error.code, 1);
+        assert.ok(error.stderrBuffer.some((entry) => entry.includes('EADDRINUSE')));
+        return true;
+      },
+    );
+  });
+
   test('returns CLI-reported ACP port when CLI switches to an available port', async () => {
     const child = new FakeChildProcess();
     const manager = new ProcessManager(

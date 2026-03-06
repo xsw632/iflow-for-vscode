@@ -1,5 +1,6 @@
 import * as assert from 'assert';
 import { EventEmitter } from 'events';
+import { startManagedProcessWithProbe } from '../process/processStartupProbe';
 import { ProcessManager } from '../processManager';
 
 class FakeStream extends EventEmitter {
@@ -117,6 +118,25 @@ suite('ProcessManager WebSocket Readiness', () => {
     await assert.doesNotReject(startPromise);
     assert.ok(wsAttempts >= 1);
     assert.ok(logs.some((line) => line.includes('WebSocket connection confirmed')));
+  });
+
+  test('startup probe reports websocket readiness metadata', async () => {
+    const startup = await startManagedProcessWithProbe({
+      nodePath: '/usr/bin/node',
+      port: 8091,
+      iflowScript: '/usr/lib/iflow/entry.js',
+      spawnProcess: (() => fakeProcess) as any,
+      createWebSocket: (() => {
+        wsAttempts += 1;
+        return new FakeWebSocket('open') as any;
+      }) as any,
+      log: (message) => logs.push(message),
+      isCancelled: () => false,
+    });
+
+    assert.strictEqual(startup.readyVia, 'websocket');
+    assert.ok(startup.readinessAttempts >= 1);
+    assert.strictEqual(startup.port, 8091);
   });
 
   test('process exit during startup rejects with helpful error', async () => {
