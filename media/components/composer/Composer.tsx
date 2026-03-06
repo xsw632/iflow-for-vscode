@@ -15,7 +15,6 @@ import {
   pendingQuestion,
   workspaceFolders,
 } from "../../store/signals";
-import { getCwd } from "../../store/signals";
 import { postMessage } from "../../hooks/usePostMessage";
 import { useAutoResize } from "../../hooks/useAutoResize";
 import { IDEContextChips } from "./IDEContextChips";
@@ -164,7 +163,6 @@ function ComposerInner({
     el.focus();
   }, []);
 
-  const cwd = getCwd(conversation);
   const usage = contextUsage.value;
   const roundChanges = currentRoundChanges.value;
 
@@ -242,11 +240,7 @@ function ComposerInner({
           </button>
         )}
       </div>
-      <StatusBar
-        conversation={conversation}
-        cwd={cwd}
-        contextUsage={usage}
-      />
+      <StatusBar conversation={conversation} contextUsage={usage} />
     </div>
   );
 }

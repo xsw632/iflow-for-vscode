@@ -7,7 +7,6 @@ import { postMessage } from "../../hooks/usePostMessage";
 
 interface StatusBarProps {
   conversation: Conversation | null;
-  cwd?: string;
   contextUsage?: { percent: number; usedTokens: number; totalTokens: number };
 }
 
@@ -18,7 +17,7 @@ const MODES: Array<{ value: ConversationMode; label: string; desc: string }> = [
   { value: "smart", label: "Smart", desc: "AI-driven edits" },
 ];
 
-export function StatusBar({ conversation, cwd, contextUsage }: StatusBarProps) {
+export function StatusBar({ conversation, contextUsage }: StatusBarProps) {
   const currentMode = conversation?.mode || "default";
   const isThinking = conversation?.think ?? false;
   const currentModel = conversation?.model ?? "GLM-4.7";
@@ -46,12 +45,6 @@ export function StatusBar({ conversation, cwd, contextUsage }: StatusBarProps) {
   return (
     <div class="composer-status-bar">
       <div class="status-left">
-        {cwd && (
-          <div class="status-item cwd-indicator" title={cwd}>
-            <span class="cwd-icon" aria-hidden="true">📁</span>
-            <span class="cwd-path">{cwd.split(/[\\/]/).pop() || cwd}</span>
-          </div>
-        )}
         <div class="status-item mode-selector-wrapper">
           <button
             id="mode-trigger"
