@@ -1,0 +1,62 @@
+/* Pending / Loading Indicator */
+.pending-indicator {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+  color: var(--text-secondary);
+}
+
+.pending-indicator-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-style: italic;
+}
+
+.bounce-logo {
+  animation: bounce 1s infinite;
+}
+
+.bounce-logo .bounce-logo-icon {
+  width: 24px;
+  height: 24px;
+}
+
+@keyframes bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+/* Error Callout */
+.error-callout {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-md);
+  padding: var(--spacing-lg);
+  background-color: var(--vscode-inputValidation-errorBackground);
+  border: 1px solid var(--vscode-inputValidation-errorBorder);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+}
+
+.retry-btn {
+  padding: 4px 12px;
+  background-color: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.retry-btn:hover {
+  background-color: var(--vscode-button-hoverBackground);
+}
+

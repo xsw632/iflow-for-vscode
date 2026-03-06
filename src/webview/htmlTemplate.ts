@@ -16,9 +16,22 @@ export function buildWebviewHtml(
   const scriptUri = webview.asWebviewUri(
     vscode.Uri.joinPath(extensionUri, 'dist', 'webview.js'),
   );
-  const styleUri = webview.asWebviewUri(
-    vscode.Uri.joinPath(extensionUri, 'media', 'styles.css'),
-  );
+  const styleLinks = [
+    'base.css',
+    'navigation.css',
+    'messages.css',
+    'tools.css',
+    'composer.css',
+    'feedback.css',
+    'panels.css',
+  ]
+    .map((fileName) =>
+      webview.asWebviewUri(
+        vscode.Uri.joinPath(extensionUri, 'media', 'styles', fileName),
+      ),
+    )
+    .map((styleUri) => `    <link href="${styleUri}" rel="stylesheet">`)
+    .join('\n');
   const faviconUri = webview.asWebviewUri(
     vscode.Uri.joinPath(extensionUri, 'media', 'iflow_favicon.svg'),
   );
@@ -31,7 +44,7 @@ export function buildWebviewHtml(
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
-    <link href="${styleUri}" rel="stylesheet">
+${styleLinks}
     <title>IFlow</title>
 </head>
 <body>

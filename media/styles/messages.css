@@ -1,0 +1,187 @@
+/* Messages Area */
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--spacing-xl) var(--spacing-xl) 140px;
+  /* Clean bottom padding for floating composer */
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xl);
+}
+
+/* Message Item */
+.message {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  max-width: 100%;
+  animation: fade-in-up 0.3s ease-out;
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.message-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-bottom: 2px;
+}
+
+.message-header .role {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* User Message Styling */
+.message.user {
+  align-items: flex-end;
+}
+
+.message.user .message-content {
+  background-color: var(--vscode-button-secondaryBackground, #3a3d41);
+  color: var(--vscode-button-secondaryForeground, #ffffff);
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-radius: var(--radius-xl);
+  border-bottom-right-radius: 2px;
+  max-width: 85%;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+/* Assistant Message Styling */
+.message.assistant {
+  align-items: flex-start;
+  max-width: 100%;
+}
+
+.message.assistant .message-content {
+  background: transparent;
+  color: var(--text-primary);
+  width: 100%;
+  padding-left: var(--spacing-sm);
+  border-left: 2px solid var(--vscode-editor-inactiveSelectionBackground);
+  /* Subtle guide */
+}
+
+/* Blocks within messages */
+.block-text {
+  white-space: normal;
+  word-break: break-word;
+}
+
+.block-text p {
+  margin-bottom: var(--spacing-sm);
+}
+
+.block-text p:last-child {
+  margin-bottom: 0;
+}
+
+.block-text h1, .block-text h2, .block-text h3,
+.block-text h4, .block-text h5, .block-text h6 {
+  margin: var(--spacing-md) 0 var(--spacing-sm) 0;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.block-text h1 { font-size: 1.4em; }
+.block-text h2 { font-size: 1.25em; }
+.block-text h3 { font-size: 1.1em; }
+.block-text h4, .block-text h5, .block-text h6 { font-size: 1em; }
+
+.block-text table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: var(--spacing-sm) 0;
+  font-size: 12px;
+}
+
+.block-text th, .block-text td {
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+  text-align: left;
+}
+
+.block-text th {
+  background-color: var(--vscode-editor-lineHighlightBackground);
+  font-weight: 600;
+}
+
+.block-text blockquote {
+  border-left: 3px solid var(--accent);
+  padding-left: var(--spacing-md);
+  margin: var(--spacing-sm) 0;
+  color: var(--text-secondary);
+}
+
+.block-text ul, .block-text ol {
+  padding-left: var(--spacing-xl);
+  margin: var(--spacing-sm) 0;
+}
+
+.block-text li {
+  margin-bottom: 2px;
+}
+
+.block-text hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: var(--spacing-md) 0;
+}
+
+.block-text code {
+  background-color: var(--vscode-textCodeBlock-background);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-family: var(--vscode-editor-font-family, 'Fira Code', monospace);
+  font-size: 0.9em;
+}
+
+.block-text a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.block-text a:hover {
+  text-decoration: underline;
+}
+
+.block-code {
+  margin: var(--spacing-sm) 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background-color: var(--vscode-textCodeBlock-background);
+}
+
+.code-header {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px var(--spacing-md);
+  background-color: rgba(0, 0, 0, 0.1);
+  font-size: 11px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+}
+
+.block-code pre {
+  padding: var(--spacing-md);
+  margin: 0;
+  overflow-x: auto;
+  font-family: var(--vscode-editor-font-family, 'Fira Code', monospace);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
