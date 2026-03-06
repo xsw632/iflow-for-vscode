@@ -25,7 +25,7 @@ Requirements for stability, quality, and Preact migration. Each maps to roadmap 
 - [x] **SIZE-01**: acpRunExecutor.ts split below 500 lines (extract recovery/inactivity logic)
 - [x] **SIZE-02**: sessionCoordinator.ts split below 500 lines (extract recovery handler)
 - [x] **SIZE-03**: webviewHandler.ts split below 500 lines (extract message/file change handlers)
-- [ ] **SIZE-04**: processManager.ts split below 500 lines (extract startup probe)
+- [x] **SIZE-04**: processManager.ts split below 500 lines (extract startup probe)
 
 ### Test Coverage
 
@@ -36,10 +36,10 @@ Requirements for stability, quality, and Preact migration. Each maps to roadmap 
 
 ### Preact Webview Rewrite
 
-- [ ] **PREACT-01**: Webview rewritten using Preact with component model
-- [ ] **PREACT-02**: Virtual DOM handles efficient rendering (replaces manual innerHTML)
-- [ ] **PREACT-03**: State management via Preact hooks/signals
-- [ ] **PREACT-04**: All existing webview functionality preserved (chat, tools, panels, file changes)
+- [x] **PREACT-01**: Webview rewritten using Preact with component model
+- [x] **PREACT-02**: Virtual DOM handles efficient rendering (replaces manual innerHTML)
+- [x] **PREACT-03**: State management via Preact hooks/signals
+- [x] **PREACT-04**: All existing webview functionality preserved (chat, tools, panels, file changes)
 
 ## Out of Scope
 
@@ -53,25 +53,25 @@ Requirements for stability, quality, and Preact migration. Each maps to roadmap 
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PERF-01 | Phase 1 | Pending |
-| PERF-02 | Phase 1 | Pending |
-| PERF-03 | Phase 1 | Pending |
-| ERR-01 | Phase 2 | Complete |
-| ERR-02 | Phase 2 | Complete |
-| ERR-03 | Phase 2 | Complete |
-| ERR-04 | Phase 2 | Complete |
-| SIZE-01 | Phase 3 | Complete |
-| SIZE-02 | Phase 3 | Complete |
-| SIZE-03 | Phase 3 | Complete |
-| SIZE-04 | Phase 3 | Pending |
-| TEST-01 | Phase 4 | Complete |
-| TEST-02 | Phase 4 | Complete |
-| TEST-03 | Phase 4 | Complete |
-| TEST-04 | Phase 4 | Complete |
-| PREACT-01 | Phase 5 | Pending |
-| PREACT-02 | Phase 5 | Pending |
-| PREACT-03 | Phase 5 | Pending |
-| PREACT-04 | Phase 5 | Pending |
+| PERF-01 | Backlog | Pending |
+| PERF-02 | Backlog | Pending |
+| PERF-03 | Backlog | Pending |
+| ERR-01 | Phase 1 | Complete |
+| ERR-02 | Phase 1 | Complete |
+| ERR-03 | Phase 1 | Complete |
+| ERR-04 | Phase 1 | Complete |
+| SIZE-01 | Phase 2 | Complete |
+| SIZE-02 | Phase 2 | Complete |
+| SIZE-03 | Phase 2 | Complete |
+| SIZE-04 | Phase 2 | Complete |
+| TEST-01 | Phase 3 | Complete |
+| TEST-02 | Phase 3 | Complete |
+| TEST-03 | Phase 3 | Complete |
+| TEST-04 | Phase 3 | Complete |
+| PREACT-01 | Phase 4 | Complete |
+| PREACT-02 | Phase 4 | Complete |
+| PREACT-03 | Phase 4 | Complete |
+| PREACT-04 | Phase 4 | Complete |
 
 **Coverage:**
 - v0.2.0 requirements: 19 total
@@ -80,4 +80,4 @@ Requirements for stability, quality, and Preact migration. Each maps to roadmap 
 
 ---
 *Requirements defined: 2026-03-02*
-*Last updated: 2026-03-02 after adding Preact requirements*
+*Last updated: 2026-03-06 after closing SIZE-04 and reconciling verified Preact migration status*

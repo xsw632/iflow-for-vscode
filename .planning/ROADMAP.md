@@ -18,9 +18,11 @@
 | Phase | Plans Complete | Latest Completed Plan | Status |
 |---|---|---|---|
 | 1 — Error Context | 3/3 | 01-03 (2026-03-02) | Complete |
-| 2 — File Size Compliance | 3/4 | 02-03 (2026-03-03) | In Progress |
+| 2 — File Size Compliance | 4/4 | 02-04 (2026-03-06) | Complete |
 | 3 — Test Coverage | 3/3 | 03-03 (2026-03-03) | Complete |
-| 4 — Preact Webview Rewrite | 0/0 | — | Pending |
+| 4 — Preact Webview Rewrite | 4/10 + verification | 04-10 / 04-VERIFICATION (2026-03-04) | Complete |
+
+Phase 4 note: the Preact rewrite was already present in repo history and verified on 2026-03-04; plan-summary bookkeeping is partial because some of that work landed out of band before roadmap/state were reconciled.
 
 ## Phase Details
 
@@ -123,6 +125,8 @@ Plans:
 - CSS approach: Claude's discretion (plain CSS or CSS Modules)
 
 **Dependencies:** Should run after Phase 3 (all stability and quality work done first, clean baseline).
+
+**Verification note:** Current codebase and `.planning/phases/04-preact-webview-rewrite/04-VERIFICATION.md` already show the Preact rewrite as complete; the summary count above reflects checked-in summary files plus the verification pass.
 
 ---
 
