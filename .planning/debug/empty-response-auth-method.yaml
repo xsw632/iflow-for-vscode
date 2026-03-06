@@ -1,0 +1,84 @@
+---
+status: resolved
+trigger: "Response from AI is empty when auth method is 'iflow' instead of 'oauth-iflow'"
+created: 2026-03-01T00:00:00Z
+updated: 2026-03-01T00:00:00Z
+---
+
+## Current Focus
+
+hypothesis: CONFIRMED - AcpClient.resolveAuthMethodOrder() places selectedAuthType blindly first in the list, so when selectedAuthType="iflow" the "iflow" (legacy API-key) auth is used instead of "oauth-iflow", causing empty responses from the CLI model
+test: Traced full chain from settings file -> resolveAuthMethodOrder -> authenticate call -> CLI session -> empty response
+expecting: Fix ensures oauth-iflow always comes before iflow regardless of selectedAuthType
+next_action: COMPLETE - fix applied and verified
+
+## Symptoms
+
+expected: AI should return a non-empty text response after sending a prompt
+actual: The response comes back empty (no text content rendered in the webview)
+errors: No visible errors - the response just appears empty
+reproduction: Send any message through the VS Code extension. The response will be empty when the auth method is "iflow" instead of "oauth-iflow"
+started: Intermittent issue - happens when selectedAuthType in settings is "iflow"
+
+## Eliminated
+
+- hypothesis: extractPromptResultText() fails to extract text from response
+  evidence: The text extraction code handles many formats correctly; the issue is the response is genuinely empty from CLI, not a parsing failure
+  timestamp: 2026-03-01T00:00:00Z
+
+## Evidence
+
+- timestamp: 2026-03-01T00:00:00Z
+  checked: ~/.iflow/settings.json
+  found: selectedAuthType="iflow", apiKey set, baseUrl="https://apis.iflow.cn/v1"
+  implication: Auth order would resolve to ["iflow", "oauth-iflow", "openai-compatible"] - "iflow" tried first
+
+- timestamp: 2026-03-01T00:00:00Z
+  checked: src/acp/client/acpClientFacade.ts:278-295 (resolveAuthMethodOrder)
+  found: Code builds list [selectedAuthType, "oauth-iflow", "iflow", "openai-compatible"] and deduplicates
+  implication: When selectedAuthType="iflow", list becomes ["iflow", "oauth-iflow", "openai-compatible"] - iflow first
+
+- timestamp: 2026-03-01T00:00:00Z
+  checked: src/acp/sessionCoordinator.ts:266-279 (authenticate loop)
+  found: Loop tries auth methods in order, breaks on first success - "iflow" auth succeeds (doesn't throw)
+  implication: Once "iflow" auth succeeds, "oauth-iflow" is never tried; CLI uses API-key auth
+
+- timestamp: 2026-03-01T00:00:00Z
+  checked: src/test/sessionCoordinator.test.ts:609 - test "prefers oauth-iflow over iflow"
+  found: This test only passes without the AcpClient's resolveAuthMethodOrder callback; the facade's callback overrides the default
+  implication: The facade's resolveAuthMethodOrder was causing the regression when selectedAuthType="iflow"
+
+- timestamp: 2026-03-01T00:00:00Z
+  checked: Full data flow - authenticate("iflow") -> session/new -> session/prompt
+  found: CLI server accepts "iflow" auth and "session/prompt" returns empty/no content via session/update notifications
+  implication: The "iflow" API-key auth doesn't properly establish the model inference session that "oauth-iflow" does
+
+## Resolution
+
+root_cause: >
+  AcpClient.resolveAuthMethodOrder() (src/acp/client/acpClientFacade.ts:278) places
+  the user's selectedAuthType from ~/.iflow/settings.json as the FIRST item in the auth
+  priority list. When selectedAuthType="iflow" (legacy API-key auth), this causes the
+  extension to authenticate with "iflow" before trying "oauth-iflow". The "iflow" auth
+  call succeeds (doesn't throw), so the loop breaks and "oauth-iflow" is never attempted.
+  The CLI then runs the model under API-key auth which returns empty responses, while
+  "oauth-iflow" would have established a proper OAuth session with valid model access.
+
+fix: >
+  Modified resolveAuthMethodOrder() to only honour selectedAuthType as a priority boost
+  when it is a custom/external auth type (not one of the built-in types: "oauth-iflow",
+  "iflow", "openai-compatible"). When selectedAuthType is one of these built-in values,
+  the hardcoded default order ["oauth-iflow", "iflow", "openai-compatible"] is used,
+  ensuring oauth-iflow is always tried first.
+
+verification: >
+  1. Compiled TypeScript successfully (no errors)
+  2. All 252 pre-existing unit tests pass
+  3. Added new regression test "oauth-iflow is preferred over iflow even when
+     selectedAuthType is 'iflow'" which validates the fix; all 253 tests pass.
+  4. Traced logic manually: with selectedAuthType="iflow", effectiveSelectedType=null,
+     so list becomes ["oauth-iflow", "iflow", "openai-compatible"] - correct order.
+
+files_changed:
+  - src/acp/client/acpClientFacade.ts (resolveAuthMethodOrder method - logic fix)
+  - src/test/acpClient.test.ts (added regression test)

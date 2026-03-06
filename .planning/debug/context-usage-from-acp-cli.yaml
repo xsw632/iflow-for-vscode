@@ -1,0 +1,154 @@
+status: resolved
+trigger: "Debug whether context/token usage data can be retrieved from the iFlow ACP CLI"
+created: "2026-03-01T00:00:00Z"
+updated: "2026-03-01T01:00:00Z"
+
+current_focus:
+  hypothesis: CONFIRMED — iFlow CLI v0.5.14 does not emit ANY token/usage data in either
+    session/update notifications or the session/prompt result.
+  test: Ran context-usage-probe.mjs against real CLI v0.5.14.
+  expecting: Determined definitively — the feature is limited by CLI, not extension code.
+  next_action: done
+
+symptoms:
+  expected: >
+    Context usage (token counts, context window usage) should be returned by the ACP CLI
+    during/after a run and displayed in the extension.
+  actual: >
+    Need to verify if usage data is actually sent by CLI, and if the extension's usage
+    chunk mapper and context usage estimator handle it correctly.
+  errors: >
+    No explicit errors — the run completes successfully but context usage visibility is unclear.
+  reproduction: >
+    Send any message through the extension and observe whether usage data flows through
+    the pipeline.
+  started: "Investigating current state of the implementation"
+
+eliminated: []
+
+evidence:
+  - timestamp: "2026-03-01T00:01:00Z"
+    checked: src/chunkMapper/usageChunkMapper.ts
+    found: >
+      UsageChunkMapper looks for token counts via two paths:
+      (A) extractFromUpdate: checks update.usageMetadata, update.usage, update.tokenUsage,
+          update.output, update.content as candidate objects.
+      (B) extractFromPayload: shallow search of payload + all USAGE_CONTAINER_KEYS, then deep
+          recursive up to depth 3.
+      Key arrays used:
+        PROMPT_TOKEN_KEYS = ["promptTokenCount", "prompt_tokens", "input_tokens"]
+        COMPLETION_TOKEN_KEYS = ["candidatesTokenCount", "completion_tokens", "output_tokens"]
+        TOTAL_TOKEN_KEYS = ["totalTokenCount", "total_tokens"]
+    implication: >
+      The mapper is defensive and tries many key names, but its effectiveness depends entirely
+      on whether the CLI actually sends any of these keys.
+
+  - timestamp: "2026-03-01T00:02:00Z"
+    checked: src/store/contextUsageEstimator.ts
+    found: >
+      estimateConversationContextUsage() is a FALLBACK only — returns
+      {usedTokens:0, totalTokens, percent:0} (zeroed out).
+      Real usage comes from ConversationService.updateAcpUsage() which is called when a
+      usage chunk arrives. updateAcpUsage() uses chunk.promptTokens ?? chunk.totalTokens ??
+      chunk.completionTokens.
+    implication: >
+      If no usage chunk ever arrives from the CLI, the UI will always show 0% usage —
+      which is the "no data" state by design.
+
+  - timestamp: "2026-03-01T00:03:00Z"
+    checked: "src/acp/client/acpRunExecutor.ts + acpNotificationRouter.ts + acpUsageExtractor.ts"
+    found: >
+      TWO extraction points for usage:
+      1. session/update notifications: AcpNotificationRouter registers handler →
+         AcpUsageExtractor.mergeEnvelopeUsage merges envelope-level usage into the update →
+         ChunkMapper.mapUpdateToChunks → UsageChunkMapper.withUsage
+      2. session/prompt result: emitFinalChunks() →
+         AcpUsageExtractor.extractUsageChunk(promptResult) →
+         UsageChunkMapper.extractFromPayload(promptResult)
+      If session/prompt result has no usage, logs:
+         "[ACP] No usage data found in session/prompt result (keys: ...)"
+    implication: >
+      The extension has correct extraction logic for both paths; the question is what the
+      real CLI actually sends.
+
+  - timestamp: "2026-03-01T00:04:00Z"
+    checked: src/store/conversationService.ts
+    found: >
+      appendToAssistantMessage() handles usage chunks specially: if chunkType === "usage",
+      calls updateAcpUsage(). updateAcpUsage() stores usedTokens = promptTokens ??
+      totalTokens ?? completionTokens. resolveContextUsage() reads from
+      acpUsedTokensByConversationId map; if no ACP data → falls back to
+      estimateConversationContextUsage (returns 0%). store.ts getState() includes contextUsage.
+    implication: >
+      The context usage is wired correctly through the store → UI path, assuming the
+      usage chunk arrives.
+
+  - timestamp: "2026-03-01T00:05:00Z"
+    checked: "scripts/_acpProbeShared.mjs + scripts/iflow-sdk-edit-test.mjs"
+    found: >
+      Existing probe infrastructure already scans for usage:
+        scanUsage() checks update.usageMetadata, update.usage, update.tokenUsage,
+          update.output, update.content.
+        extractUsagePayload() looks for promptTokenCount/prompt_tokens/input_tokens,
+          candidatesTokenCount/completion_tokens/output_tokens, totalTokenCount/total_tokens.
+      The iflow-sdk-edit-test.mjs already logs summary of usage found in updates AND in
+      session/prompt result. There is already a "ACP Real CLI Smoke" suite that runs this
+      script under IFLOW_REAL_CLI_TEST=1.
+    implication: >
+      There is an existing probe but it does not assert on usage — it only counts. We need
+      a dedicated context usage integration test with assertions.
+
+  - timestamp: "2026-03-01T00:06:00Z"
+    checked: src/protocol/conversation.ts
+    found: >
+      ConversationState includes contextUsage?: { usedTokens, totalTokens, percent }.
+      MODEL_CONTEXT_SIZES maps each model name to total context size.
+      updateAcpUsage uses promptTokens ?? totalTokens ?? completionTokens as "used" tokens.
+    implication: >
+      The used token count comes from prompt tokens (input), not total tokens — this is
+      correct behavior for showing context fill level.
+
+  - timestamp: "2026-03-01T01:00:00Z"
+    checked: "Real iFlow CLI v0.5.14 via context-usage-probe.mjs and raw-usage-probe.mjs"
+    found: |
+      The CLI sends ZERO token/usage data in both paths:
+      1. session/update notifications: 4 notifications received, NONE contained any of the
+         expected keys (promptTokenCount, prompt_tokens, input_tokens, candidatesTokenCount,
+         completion_tokens, output_tokens, totalTokenCount, total_tokens, usageMetadata,
+         usage, tokenUsage).
+         Notification types seen: available_commands_update (1), agent_thought_chunk (2),
+         agent_message_chunk (1).
+         Envelope structure: always { sessionId, update: { sessionUpdate, content } } only.
+      2. session/prompt result: returns ONLY { stopReason: "end_turn" } with no other fields.
+      Both deep scans of ALL messages for ANY word containing "token" or "usage" found zero hits.
+    implication: >
+      Context usage CANNOT be populated in the extension UI when using CLI v0.5.14.
+      The extension correctly falls back to showing 0% (the "no data" state).
+      The extension code itself is correct — UsageChunkMapper, AcpUsageExtractor,
+      ConversationService all work correctly as verified by 18 passing unit tests.
+      The gap is entirely in the CLI: it does not yet expose token usage via ACP.
+
+resolution:
+  root_cause: >
+    iFlow CLI v0.5.14 does not emit token/usage data in ACP responses. Both
+    session/update notifications (only contain sessionUpdate type + content) and the
+    session/prompt result (only contains stopReason) lack any token count fields.
+    The extension pipeline (UsageChunkMapper → AcpUsageExtractor → ConversationService)
+    is correct and fully tested; the feature gap is on the CLI side.
+  fix: >
+    No code fix needed in the extension — the pipeline is correct.
+    The "fix" is to wait for a CLI update that emits usageMetadata/usage/tokenUsage
+    in session/update or session/prompt responses, or to request this feature from the
+    iflow CLI team. The extension's defensive extraction logic (UsageChunkMapper) already
+    handles all common LLM API formats (Gemini, OpenAI, Anthropic) so will work
+    automatically once the CLI emits usage data.
+  verification: >
+    Verified by running context-usage-probe.mjs against CLI v0.5.14. The probe showed:
+    - session/update notifications: 4, with usage data: 0
+    - session/prompt result usage: false
+    - extension would emit usage chunks: 0
+    - context usage visible in UI: false
+    18 unit tests all pass confirming the extension code is correct.
+  files_changed:
+    - scripts/context-usage-probe.mjs (created — real integration probe)
+    - src/test/contextUsageIntegration.test.ts (created — integration + unit tests)

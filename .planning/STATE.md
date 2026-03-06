@@ -1,29 +1,29 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.2
-milestone_name: milestone
-status: complete
-last_updated: "2026-03-06T05:50:43Z"
+milestone: v0.1.7
+milestone_name: Stability & Preact Migration
+status: archived
+last_updated: "2026-03-06T12:22:22Z"
 progress:
   total_phases: 4
   completed_phases: 4
-  total_plans: 10
-  completed_plans: 10
+  total_plans: 20
+  completed_plans: 20
 ---
 
 ## Current Position
 
-Phase: 02-file-size-compliance
-Plan: 04
-Status: Completed 02-04; Phase 2 file-size-compliance complete. Milestone v0.2 now has all planned phases complete, with Phase 4 already verified from existing Preact migration work.
-Last activity: 2026-03-06 — Executed 02-04, closed SIZE-04, and reconciled roadmap/requirements/state with verified Preact migration history
+Phase: milestone-closeout
+Plan: archive
+Status: Archived milestone v0.1.7 and reset planning docs for the next milestone definition cycle.
+Last activity: 2026-03-06 — Archived roadmap and requirements, corrected planning version drift from v0.2.0 to v0.1.7, and prepared the repo for fresh milestone planning
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-02)
+See: .planning/PROJECT.md (updated 2026-03-06)
 
 **Core value:** Users can interact with iFlow AI directly in VS Code with real-time streaming responses and full tool integration
-**Current focus:** v0.2.0 milestone closeout and next-milestone planning
+**Current focus:** Start the next milestone with fresh requirements and roadmap artifacts
 
 ## Milestone Progress
 
@@ -32,18 +32,15 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 | 1 | Error Context | ● Complete | 3/3 |
 | 2 | File Size Compliance | ● Complete | 4/4 |
 | 3 | Test Coverage | ● Complete | 3/3 |
-| 4 | Preact Webview Rewrite | ● Complete | 4/10 + verification |
+| 4 | Preact Webview Rewrite | ● Complete | 10/10 |
 
 ## Accumulated Context
 
-- Webview runtime now renders through a Preact entrypoint (`media/main.tsx`) and component tree with `@preact/signals` state; legacy DOM-driven files are not on the active runtime path.
-- Phase 4 Preact migration was already present in repo history (`32a6a34 fully migrate to preact`) and verified on 2026-03-04 in `.planning/phases/04-preact-webview-rewrite/04-VERIFICATION.md`.
-- All four Phase 2 size-targeted host files are now below 500 lines; `processManager.ts` is 343 lines and delegates startup readiness orchestration to `src/process/processStartupProbe.ts`.
-- Full unit suite currently passes at `333 passing, 4 pending`.
-- ERR-01 and ERR-04 marked complete in REQUIREMENTS.md after 01-01 execution
-- Preflight validation now fails fast in fixed order: files -> context -> model.
-- Validation failures emit stable stage tags (`INVALID_FILES`, `INVALID_CONTEXT`, `INVALID_MODEL`) with one immediate action line.
-- ACP connection failures now use deterministic lifecycle tags (`TRANSPORT_ERROR`, `AUTH_ERROR`, `PROTOCOL_ERROR`) with fallback to `PROTOCOL_ERROR`.
+- Milestone archives now live at `.planning/milestones/v0.1.7-ROADMAP.md` and `.planning/milestones/v0.1.7-REQUIREMENTS.md`.
+- The active webview runtime renders through `media/main.tsx` and Preact component surfaces; the old imperative rendering path is no longer the shipped runtime.
+- All four Phase 2 size-targeted host files are below 500 lines; `processManager.ts` is 343 lines and delegates startup readiness orchestration to `src/process/processStartupProbe.ts`.
+- Current verification state is `npm run compile` passed and `npm run test:unit` passed (`337 passing`, `4 pending`) on 2026-03-06.
+- Fresh `.planning/REQUIREMENTS.md` and milestone roadmap artifacts should be recreated by the next milestone workflow rather than by hand.
 
 ## Decisions
 
@@ -69,12 +66,14 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 - [Phase 03-test-coverage]: Used descriptor-based patch helpers to safely cover win32 and fs stat branches without leaking global state across tests.
 - [Phase 03-test-coverage]: Fixed JsonFileStore.update by snapshotting pre-update JSON so in-place updater mutations are treated as real changes.
 - [Phase 03-test-coverage]: Kept legacy threshold entries but skipped checks for files removed from the repo to prevent stale gate breakage.
-- [Milestone v0.2]: Reconciled roadmap/state/requirements with existing Preact migration evidence instead of re-executing already-verified Phase 4 work.
+- [Milestone v0.1.7]: Reconciled roadmap/state/requirements with existing Preact migration evidence instead of re-executing already-verified Phase 4 work.
+- [Milestone v0.1.7]: Corrected planning-version drift from `v0.2.0` to the shipped release `v0.1.7` during archive closeout.
 
 ## Session Log
 
 | Date | Session | Stopped At | Resume |
 |------|---------|------------|--------|
+| 2026-03-06 | Complete milestone | Archived v0.1.7 and reset planning artifacts | `$gsd-new-milestone` |
 | 2026-03-06 | Execute 02-04 | Completed 02-file-size-compliance-04-PLAN.md | /gsd:complete-milestone |
 | 2026-03-03 | Execute 03-03 | Completed 03-test-coverage-03-PLAN.md | /gsd:execute-phase 03-test-coverage |
 | 2026-03-03 | Execute 03-02 | Completed 03-test-coverage-02-PLAN.md | /gsd:execute-phase 03-test-coverage |
@@ -85,4 +84,4 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 | 2026-03-02 | Execute 01-03 | Completed 01-error-context-03-PLAN.md | /gsd:execute-phase 02-file-size-compliance |
 | 2026-03-02 | Execute 01-02 | Completed 01-error-context-02-PLAN.md | /gsd:execute-phase 01-error-context |
 | 2026-03-02 | Execute 01-01 | Completed 01-error-context-01-PLAN.md | /gsd:execute-phase 01-error-context |
-| 2026-03-02 | Project init | Milestone v0.2.0 roadmap created | /gsd:plan-phase 1 |
+| 2026-03-02 | Project init | Milestone roadmap created (later corrected to v0.1.7 archive target) | /gsd:plan-phase 1 |
