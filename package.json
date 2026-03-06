@@ -201,6 +201,8 @@
     "webpack-cli": "^6.0.1"
   },
   "dependencies": {
+    "@preact/signals": "^2.8.1",
+    "preact": "^10.28.4",
     "ws": "^8.18.0"
   }
 }

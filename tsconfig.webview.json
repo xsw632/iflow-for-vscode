@@ -10,7 +10,9 @@
 		"rootDir": ".",
 		"outDir": "out/media",
 		"strict": true,
-		"moduleResolution": "bundler"
+		"moduleResolution": "bundler",
+		"jsx": "react-jsx",
+		"jsxImportSource": "preact"
 	},
 	"include": ["media/**/*", "src/protocol.ts", "src/shared/**/*.ts"],
 	"exclude": ["node_modules"]

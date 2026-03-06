@@ -53,18 +53,22 @@ const webviewConfig = {
   target: 'web', // Webview runs in browser context
   mode: 'none',
 
-  entry: './media/main.ts',
+  entry: './media/main.tsx',
   output: {
     path: path.resolve(__dirname, 'dist'),
     filename: 'webview.js'
   },
   resolve: {
-    extensions: ['.ts', '.js']
+    extensions: ['.tsx', '.ts', '.js'],
+    alias: {
+      'react': 'preact/compat',
+      'react-dom': 'preact/compat'
+    }
   },
   module: {
     rules: [
       {
-        test: /\.ts$/,
+        test: /\.tsx?$/,
         exclude: /node_modules/,
         use: [
           {
