@@ -32,22 +32,32 @@ Users can interact with iFlow AI directly in VS Code with real-time streaming re
 
 <!-- Current scope. Building toward these. -->
 
-- [ ] Define the next milestone with fresh requirements and roadmap artifacts
-- [ ] Decide whether message virtualization is needed based on real long-conversation profiling
-- [ ] Reassess any remaining webview performance follow-up work now that the active runtime is Preact-based
+- [ ] CWD 显示 — Composer 内嵌式，类 Cursor 风格，带设置开关 (v0.1.8)
+- [ ] Slash Command 重修 — /skill (CLI 技能选择器) + /mcp (MCP 服务器状态视图) (v0.1.9)
+- [ ] 多标签页 — 每个会话独立 VS Code 编辑器 Tab，支持 + 新建 (v0.2.0)
 
 ### Future
 
 <!-- Planned for subsequent milestones. -->
 
-- [ ] Additional UX and performance work once the next milestone scope is defined
+- [ ] Message virtualization (需基于真实长对话 profiling 验证必要性)
+- [ ] Additional UX and performance work
 
 ### Out of Scope
 
 <!-- Explicit boundaries. Includes reasoning to prevent re-adding. -->
 
 - Full host-side ACP architecture rewrite — current host stack is now stable enough to avoid churn without a dedicated milestone
-- New feature expansion before the next milestone is defined
+- Webview sidebar panel (选择了 Composer 内嵌方式替代)
+
+## Current Milestone: v0.2.0 — UX Features & Multi-Tab
+
+**Goal:** Add CWD context display, rebuilt slash commands (/skill, /mcp), and multi-tab editor sessions to the chat panel.
+
+**Target features:**
+- CWD display in Composer area (Cursor-style, with enable/disable setting) → v0.1.8
+- Slash command overhaul: /skill picker + /mcp status → v0.1.9
+- Multi-tab sessions: each conversation opens as independent VS Code editor tab → v0.2.0
 
 ## Context
 
@@ -55,7 +65,7 @@ Users can interact with iFlow AI directly in VS Code with real-time streaming re
 - **Codebase state:** Active webview runtime uses Preact + `@preact/signals`; host communication remains ACP over WebSocket + JSON-RPC 2.0
 - **Verification status:** `npm run compile` passed and `npm run test:unit` passed (`337 passing`, `4 pending`) on 2026-03-06
 - **Codebase size:** ~32.9k lines across `src/`, `media/`, `test/`, and `scripts/`
-- **Known follow-up:** message virtualization was not shipped and should be validated with real profiling before adding it to the next milestone
+- **Known follow-up:** message virtualization deferred — validate with real profiling before adding
 
 ## Constraints
 
@@ -78,14 +88,13 @@ Users can interact with iFlow AI directly in VS Code with real-time streaming re
 
 - Milestone `v0.1.7` is archived under `.planning/milestones/`.
 - The active webview runtime is component-based and no longer depends on the old imperative rendering pipeline.
-- Host diagnostics, file-size compliance, and coverage gates all shipped in this milestone.
-- The next milestone has not been defined yet, and `.planning/REQUIREMENTS.md` should be recreated fresh when planning resumes.
+- Host diagnostics, file-size compliance, and coverage gates all shipped in that milestone.
+- Milestone v0.2.0 is now active, focused on UX features and multi-tab support.
 
 ## Next Milestone Goals
 
-- Create fresh milestone requirements and roadmap artifacts via `$gsd-new-milestone`
-- Decide whether conversation virtualization and any remaining render-performance work should enter the next milestone
-- Reassess release packaging/publish follow-through after the planning reset
+- Deliver CWD display (v0.1.8), slash command overhaul (v0.1.9), and multi-tab sessions (v0.2.0)
+- Each sub-version is one phase deliverable
 
 ---
-*Last updated: 2026-03-06 after v0.1.7 milestone archive*
+*Last updated: 2026-03-07 — Milestone v0.2.0 started*
