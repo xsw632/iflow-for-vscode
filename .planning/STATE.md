@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v0.2.0
 milestone_name: UX Features & Multi-Tab
-status: defining-requirements
+status: roadmap-created
 last_updated: "2026-03-07"
 progress:
-  total_phases: 0
+  total_phases: 3
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -13,10 +13,10 @@ progress:
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: Ready to plan Phase 5
 Plan: —
-Status: Defining requirements
-Last activity: 2026-03-07 — Milestone v0.2.0 started
+Status: Roadmap created, ready to plan
+Last activity: 2026-03-07 — Roadmap created with 3 phases (5-7)
 
 ## Project Reference
 
@@ -29,6 +29,9 @@ See: .planning/PROJECT.md (updated 2026-03-07)
 
 | Phase | Name | Status | Plans |
 |-------|------|--------|-------|
+| 5 | CWD Display (v0.1.8) | ○ Not started | — |
+| 6 | Slash Commands (v0.1.9) | ○ Not started | — |
+| 7 | Multi-Tab Sessions (v0.2.0) | ○ Not started | — |
 
 ## Accumulated Context
 
@@ -46,4 +49,4 @@ See: .planning/PROJECT.md (updated 2026-03-07)
 
 | Date | Session | Stopped At | Resume |
 |------|---------|------------|--------|
-| 2026-03-07 | New milestone | Defining requirements for v0.2.0 | /gsd:plan-phase 5 |
+| 2026-03-07 | New milestone | Roadmap created for v0.2.0 (3 phases) | /gsd:plan-phase 5 |
