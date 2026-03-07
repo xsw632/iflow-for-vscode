@@ -20,6 +20,11 @@ This milestone adds three independently shippable features: a CWD context displa
 **Version:** v0.1.8
 **Depends on:** None
 **Requirements:** CWD-01, CWD-02, CWD-03, CWD-04
+**Plans:** 2 plans
+
+Plans:
+- [ ] 05-01-PLAN.md — Settings propagation infrastructure (protocol type, package.json setting, host/webview wiring)
+- [ ] 05-02-PLAN.md — CwdBar Preact component, CSS, Composer integration, visual verification
 
 **Success Criteria:**
 1. User sees folder icon + folder name above the Composer input area when connected to a CLI session
@@ -28,9 +33,9 @@ This milestone adds three independently shippable features: a CWD context displa
 4. When the session reconnects to a different cwd, the displayed folder name updates automatically
 
 **Implementation Notes:**
-- New Preact component: `StatusBar.tsx` in `media/components/composer/`
-- New CSS: `statusbar.css`
-- Host sends cwd info via existing `stateUpdated` or new `cwdUpdated` message
+- New Preact component: `CwdBar.tsx` in `media/components/composer/`
+- CSS in existing `composer.css` with `.cwd-bar` class prefix
+- Host sends settings via new `settingsUpdated` ExtensionMessage
 - Register `iflow.showStatusBar` in `package.json` contributes.configuration
 - Propagate setting changes to webview via `settingsUpdated` message
 
@@ -101,4 +106,4 @@ This milestone adds three independently shippable features: a CWD context displa
 **Coverage: 14/14 (100%)**
 
 ---
-*Last updated: 2026-03-07 — Milestone v0.2.0 roadmap created*
+*Last updated: 2026-03-07 — Phase 5 plans created (2 plans, 2 waves)*
