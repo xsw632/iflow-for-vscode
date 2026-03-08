@@ -42,4 +42,5 @@ export type ExtensionMessage =
   | { type: 'streamChunk'; chunk: StreamChunk }
   | { type: 'streamEnd' }
   | { type: 'streamError'; error: string }
-  | { type: 'ideContextChanged'; context: IDEContext };
+  | { type: 'ideContextChanged'; context: IDEContext }
+  | { type: 'settingsUpdated'; settings: { showCwdBar: boolean } };
