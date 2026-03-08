@@ -23,6 +23,7 @@ import { MentionMenu } from "./MentionMenu";
 import { SlashMenu } from "./SlashMenu";
 import { FileChangesCard } from "./FileChangesCard";
 import { StatusBar } from "./StatusBar";
+import { CwdBar } from "./CwdBar";
 import { PanelHost } from "../panels/PanelHost";
 import { useEffect } from "preact/hooks";
 
@@ -171,6 +172,7 @@ function ComposerInner({
       <FileChangesCard summary={roundChanges} />
       <IDEContextChips />
       <AttachedFiles files={attachedFiles.value} onRemove={handleRemoveFile} />
+      <CwdBar />
       <div class="composer-input-row">
         <button
           id="attach-btn"

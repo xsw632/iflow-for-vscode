@@ -541,6 +541,30 @@
   color: var(--vscode-dropdown-foreground);
 }
 
+/* CWD Bar */
+.cwd-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px var(--spacing-sm);
+  font-size: 11px;
+  color: var(--text-secondary);
+  cursor: default;
+}
+
+.cwd-bar .cwd-icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.cwd-bar .cwd-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Workspace Indicator */
 .workspace-indicator {
   cursor: default;
