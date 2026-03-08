@@ -23,7 +23,7 @@ This milestone adds three independently shippable features: a CWD context displa
 **Plans:** 2 plans
 
 Plans:
-- [ ] 05-01-PLAN.md — Settings propagation infrastructure (protocol type, package.json setting, host/webview wiring)
+- [x] 05-01-PLAN.md — Settings propagation infrastructure (protocol type, package.json setting, host/webview wiring)
 - [ ] 05-02-PLAN.md — CwdBar Preact component, CSS, Composer integration, visual verification
 
 **Success Criteria:**
