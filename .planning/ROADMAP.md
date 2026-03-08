@@ -24,7 +24,7 @@ This milestone adds three independently shippable features: a CWD context displa
 
 Plans:
 - [x] 05-01-PLAN.md — Settings propagation infrastructure (protocol type, package.json setting, host/webview wiring)
-- [ ] 05-02-PLAN.md — CwdBar Preact component, CSS, Composer integration, visual verification
+- [x] 05-02-PLAN.md — CwdBar Preact component, CSS, Composer integration, visual verification
 
 **Success Criteria:**
 1. User sees folder icon + folder name above the Composer input area when connected to a CLI session
