@@ -505,6 +505,9 @@ suite("WebviewHandler", () => {
       pushIdeContext: () => {
         callOrder.push("pushIdeContext");
       },
+      postCurrentSettings: () => {
+        callOrder.push("postCurrentSettings");
+      },
     } as unknown as WebviewMessageHandlerContext;
 
     const handlers = createWebviewMessageHandlers(context);
@@ -530,8 +533,33 @@ suite("WebviewHandler", () => {
       "syncWorkspaceFolders",
       "postStateUpdated",
       "pushIdeContext",
+      "postCurrentSettings",
     ]);
     assert.strictEqual(unknownHandled, false);
     assert.deepStrictEqual(unhandled, ["pickFiles"]);
+  });
+
+  test("ready message triggers postCurrentSettings with showCwdBar value", async () => {
+    const { handler } = createHarness();
+    const posted: unknown[] = [];
+    (
+      handler as unknown as { postMessage: (message: unknown) => void }
+    ).postMessage = (message) => {
+      posted.push(message);
+    };
+
+    await handler.handleMessage({ type: "ready" });
+
+    const settingsMsg = posted.find(
+      (m) =>
+        typeof m === "object" &&
+        m !== null &&
+        (m as { type?: string }).type === "settingsUpdated",
+    ) as { type: string; settings: { showCwdBar: boolean } } | undefined;
+
+    assert.ok(settingsMsg, "Expected a settingsUpdated message to be posted");
+    assert.strictEqual(settingsMsg.settings.showCwdBar, true);
+
+    await handler.dispose();
   });
 });

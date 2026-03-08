@@ -218,12 +218,11 @@ export class WebviewHandler {
     this.webview = webview;
 
     // Listen for messages from the webview
-    const messageDisposable = webview.onDidReceiveMessage(
-      (message: WebviewMessage) => this.handleMessage(message),
+    this.disposables.push(
+      webview.onDidReceiveMessage((message: WebviewMessage) => this.handleMessage(message)),
     );
-    this.disposables.push(messageDisposable);
 
-    // Re-check CLI availability when relevant settings change
+    // Re-check CLI availability and propagate settings when config changes
     const configDisposable = this.deps.onDidChangeConfiguration(async (e) => {
       if (
         e.affectsConfiguration("iflow.nodePath") ||
@@ -237,20 +236,18 @@ export class WebviewHandler {
         this.cliStatusService.invalidateCache();
         await this.checkCliAvailability(true);
       }
+      if (e.affectsConfiguration('iflow.showStatusBar')) this.postCurrentSettings();
     });
     this.disposables.push(configDisposable);
 
     // Track active editor changes for IDE context
-    const editorDisposable = this.deps.onDidChangeActiveTextEditor(() => {
-      this.ideContextSyncService.push(IDE_CONTEXT_MAX_SELECTION_CHARS);
-    });
-    this.disposables.push(editorDisposable);
+    this.disposables.push(this.deps.onDidChangeActiveTextEditor(
+      () => this.ideContextSyncService.push(IDE_CONTEXT_MAX_SELECTION_CHARS),
+    ));
 
     // Track selection changes (debounced)
     const selectionDisposable = this.deps.onDidChangeTextEditorSelection(() => {
-      if (this.selectionDebounceTimer) {
-        clearTimeout(this.selectionDebounceTimer);
-      }
+      if (this.selectionDebounceTimer) clearTimeout(this.selectionDebounceTimer);
       this.selectionDebounceTimer = setTimeout(() => {
         this.selectionDebounceTimer = null;
         this.ideContextSyncService.push(IDE_CONTEXT_MAX_SELECTION_CHARS);
@@ -260,12 +257,9 @@ export class WebviewHandler {
 
     // Initialize workspace folders and track changes
     this.syncWorkspaceFolders();
-    const workspaceFolderDisposable = this.deps.onDidChangeWorkspaceFolders(
-      () => {
-        this.syncWorkspaceFolders();
-      },
+    this.disposables.push(
+      this.deps.onDidChangeWorkspaceFolders(() => this.syncWorkspaceFolders()),
     );
-    this.disposables.push(workspaceFolderDisposable);
   }
 
   getStore(): ConversationStore {
@@ -296,6 +290,7 @@ export class WebviewHandler {
           },
           pushIdeContext: () =>
             this.ideContextSyncService.push(IDE_CONTEXT_MAX_SELECTION_CHARS),
+          postCurrentSettings: () => this.postCurrentSettings(),
           resetCliConnection: async () => {
             await this.client.resetConnection();
             this.client.clearAutoDetectCache();
@@ -453,6 +448,11 @@ export class WebviewHandler {
     const folders = this.workspaceFileService.syncWorkspaceFolders();
     this.store.setWorkspaceFolders(folders);
     this.debug(`Synced workspace folders: count=${folders.length}`);
+  }
+
+  private postCurrentSettings(): void {
+    const showCwdBar = this.deps.getConfig<boolean>('showStatusBar', true);
+    this.postMessage({ type: 'settingsUpdated', settings: { showCwdBar } });
   }
 
   postMessage(message: ExtensionMessage): void {

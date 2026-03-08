@@ -12,6 +12,7 @@ import {
   pendingConfirmation,
   pendingPlanApproval,
   pendingQuestion,
+  showCwdBar,
   streamStatus,
 } from "./signals";
 import { postMessage } from "../hooks/usePostMessage";
@@ -121,6 +122,12 @@ export function handleExtensionMessage(message: ExtensionMessage): void {
       streamStatus.value = reduceStreamStatus(streamStatus.value, {
         type: message.type,
       });
+      break;
+
+    case "settingsUpdated":
+      if (message.settings.showCwdBar !== undefined) {
+        showCwdBar.value = message.settings.showCwdBar;
+      }
       break;
 
     case "ideContextChanged": {

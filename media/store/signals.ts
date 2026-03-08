@@ -33,6 +33,7 @@ export const mentionFiles = signal<Array<{ path: string; name: string }>>([]);
 export const showConversationPanel = signal(false);
 export const conversationSearch = signal("");
 export const showModeMenu = signal(false);
+export const showCwdBar = signal(true);
 
 export const ideContext = signal<IDEContext>({
   activeFile: null,

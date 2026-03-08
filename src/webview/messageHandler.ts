@@ -11,6 +11,7 @@ export interface WebviewMessageHandlerContext {
   syncWorkspaceFolders(): void;
   postStateUpdated(): void;
   pushIdeContext(): void;
+  postCurrentSettings(): void;
   resetCliConnection(): Promise<void>;
   checkCliAvailability(forceRefresh: boolean): Promise<void>;
   pickFiles(): Promise<void>;
@@ -54,6 +55,7 @@ export function createWebviewMessageHandlers(
       context.syncWorkspaceFolders();
       context.postStateUpdated();
       context.pushIdeContext();
+      context.postCurrentSettings();
     },
     recheckCli: async () => {
       await context.resetCliConnection();
