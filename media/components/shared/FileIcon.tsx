@@ -1,4 +1,3 @@
-import { escapeHtml } from "../../markdownRenderer";
 import { getFileIcon, getFileIconClass } from "../../fileUtils";
 
 export function FileIcon({
@@ -12,7 +11,7 @@ export function FileIcon({
   if (extraClass) classes.push(extraClass);
   return (
     <span class={classes.join(" ")} aria-hidden="true">
-      {escapeHtml(getFileIcon(path))}
+      {getFileIcon(path)}
     </span>
   );
 }

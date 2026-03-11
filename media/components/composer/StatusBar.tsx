@@ -95,7 +95,7 @@ export function StatusBar({ conversation, contextUsage }: StatusBarProps) {
           </div>
         </div>
         {isThinking && <span class="thinking-chip">🧠 Thinking</span>}
-        <div class="status-item">
+        <div class="status-item model-selector-wrapper">
           <select
             id="model-select"
             class="dropdown-mini"
@@ -110,6 +110,7 @@ export function StatusBar({ conversation, contextUsage }: StatusBarProps) {
               </option>
             ))}
           </select>
+          <span class="chevron" aria-hidden="true">▾</span>
         </div>
       </div>
       <ContextUsage usage={contextUsage} />

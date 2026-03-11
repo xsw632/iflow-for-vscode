@@ -47,3 +47,8 @@
 1. 安装并完成 `iflow` CLI 的基础配置。
 2. 在 VS Code 侧边栏点击 **IFlow** 图标打开面板，或使用命令面板执行 `IFlow: Open Panel`。
 3. 如遇连接问题，检查 `iflow.port` 是否与 CLI 侧一致，并可临时开启 `iflow.debugLogging` 查看输出。
+
+## Todo-list
+- add cwd
+- add /skills and /mcp
+- add inline comparison
