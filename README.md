@@ -1,3 +1,5 @@
+
+
 # IFlow for VS Code
 
 将 `iflow` CLI 带到 VS Code：在侧边栏打开 IFlow 面板，快速呼出常用命令，并提供“锁定编辑器分组”能力，便于专注在一个固定区域进行对话与操作。
@@ -34,7 +36,7 @@
 
 在 VS Code 设置中搜索 `IFlow` 或 `iflow.`：
 
-- `iflow.nodePath`：Node.js 可执行文件路径（可选）。
+- `iflow.nodePath`：Node.js 可执行文件路径（可选，需 v22+）。
 - `iflow.baseUrl`：OpenAI-compatible API base URL（可选，仅在需要覆盖 CLI 端点时设置）。
 - `iflow.port`：IFlow CLI WebSocket 端口（默认 `8090`）。
 - `iflow.timeout`：连接超时（毫秒，默认 `60000`）。
